@@ -1,0 +1,6 @@
+out/
+tickets/
+*.class
+.idea/
+.vscode/
+*.iml

@@ -1,0 +1,42 @@
+RailYatra - AI_LOG.txt
+Team members:
+  1. Lakshya Pandey          ENG25AM0560
+  2. Vinayak Kumar           ENG25AM0535
+  3. Johan                   ENG25AM0555
+  4. B. Damara Keshav Reddy  ENG25AM0548
+Section: 3 H
+AI tool used: Claude (Anthropic)
+
+The rules require this log: what we asked the AI and what we changed.
+>>> TEAM: fill in the "What we changed" lines yourselves, honestly, as you edit the code. <<<
+
+----------------------------------------------------------------------------
+1. Asked: Read all 15 Day-1 problem statements and our evaluation sheet, and choose the best topic.
+   AI answer: All 15 share the same template; chose RailYatra for relatability and room for innovation.
+   What we changed / decided: ______________________________________________
+
+2. Asked: Generate the full RailYatra Java 17 console program (arrays only) covering Units I-V.
+   AI answer: Packages model / people / exceptions / service / util; Main menu; ItemStack; checked exceptions.
+   What we changed: ________________________________________________________
+
+3. Asked: Add innovation features within the rules.
+   AI answer: Ticket file per PNR, savings line, occupancy chart and concession summary in report,
+              SelfTest runner, flexible PNR search, cart-aware berth check.
+   What we changed: ________________________________________________________
+
+4. Asked: Verify the 4 official test cases.
+   AI answer: Case 1 = 1,134.00, Case 2 = 3,937.50, Case 3 and Case 4 exceptions all pass.
+   What we checked by hand: ________________________________________________
+
+5. Asked (after Mam asked for novelty): Add real novelty features.
+   AI answer: N1 smart berth allotment (seniors get lower berths), N2 waitlist on our own circular queue
+              with cancellation + automatic confirmation, N3 cheapest alternative class suggestions.
+   What we changed: ________________________________________________________
+
+6. Asked: Explain each unit concept for the viva (VIVA_NOTES.md).
+   What we practised: ______________________________________________________
+
+----------------------------------------------------------------------------
+CP4 surprise change (done WITHOUT AI):
+   Change asked by mentor: _________________________________________________
+   What we edited:         _________________________________________________

@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: railyatra
+    runtime: docker
+    plan: free
+    healthCheckPath: /

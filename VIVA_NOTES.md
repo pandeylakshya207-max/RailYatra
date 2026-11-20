@@ -100,32 +100,37 @@ Final methods: `Person.getName()` and `Booking.getTotal()`. `toString()` is over
 
 ---
 
-## NOVELTY: be ready to demo and explain all three
+## NOVELTY: three features railway booking does not offer today
 
-| # | Feature | Demo (in the program) | Where in code | Concepts it shows |
+Mam's definition: novelty = something not yet implemented. Lower berths for seniors, the waitlist and partial
+cancellation already exist on IRCTC, so we call those "features". Our NOVELTY is these three:
+
+| # | Novelty | Demo | Where in code | Concepts it shows |
 |---|---|---|---|---|
-| N1 | Smart berth allotment, seniors get lower berths | Book 3 × AC 3 Tier as Senior → `B-1 LB, B-4 LB, B-7 SL` | `CoachClass.allocate()`, `berthType()`, `Passenger.prefersLowerBerth()` overridden in `SeniorCitizen` | `boolean[]` array, `%` operator, two-pass search, **runtime polymorphism** |
-| N2 | Waitlist + cancellation + auto-confirm | Book 8 × AC First Class (General); new booking asks 3 × 104 → join waitlist (Y); menu 6 → PNR1 → W (whole) or S (some berths) → WL1 confirmed as new PNR | `util/WaitlistQueue.java`, `ReservationCounter.cancel()` / `cancelPart()`, `promoteWaitlist()`, `Booking.cancelPart()` | **own circular queue (FIFO)**, overloaded constructor in `Booking`, static WL counter |
-| N3 | Alternative class suggestions | Ask more berths than left → list of classes with enough berths, cheapest first | `ReservationCounter.suggestAlternatives()` | **bubble sort** on an array, exact-size array copy |
+| 1 | **Family seating together**: all berths of one booking in the same bay; if impossible, the fewest bays | Book 6 Sleeper (Bay 1), then 4 Sleeper: they go together to Bay 2 instead of 2 + 2 split | `CoachClass.allocate()`, `bayOf()`, `BookingLine.getBayText()` | integer division for bay number, `boolean[]` chosen bays, greedy choice, nested loops |
+| 2 | **Automatic berth swap** (menu 8): at booking each passenger says if they are happy to swap; anyone can ask for a berth type and is matched automatically | Arun and Meena fill AC First. Menu 8 → PNR6 → R → H-6 UB → LB: waits as SW1. Menu 8 → PNR5 → A (Arun agrees): SW1 matched at once, both tickets updated | `Booking.swapWilling`, `model/SwapRequest.java`, `ReservationCounter.requestSwap()`, `tryServe()`, `servePendingSwaps()`, `CoachClass.findFreeOfType()` | boolean flag, 4-step search (same bay first), array of waiting requests, re-check after every booking / agreement / cancellation |
+| 3 | **Priority waitlist**: pregnant / disability first, then seniors, then everyone else | Fill AC First. Mohan joins waitlist (N), then Priya (P). Menu 7 shows Priya first. Cancel 1 berth (menu 6, S) → Priya confirmed | `WaitlistEntry` (priority 2/1/0), `ReservationCounter.promoteWaitlist()` | priority levels, `switch` on `char`, circular queue walked once per level, overloaded `addToWaitlist()` |
 
 | Likely question | Answer |
 |---|---|
-| Why is this novel? | Real railway counters do these three things (berth types, senior lower-berth quota, waitlist), but the hackathon template doesn't ask for them. They solve the real problem in the statement: concessions missed and coaches overbooked. |
-| Stack vs queue? | A stack is **LIFO**, last in first out, so undo removes the last coach class added. A queue is **FIFO**, first in first out, so the first person on the waitlist is confirmed first. |
-| What is "circular"? | When `rear` reaches the end of the array it wraps to index 0 using `% capacity`, so slots freed by `dequeue` are reused. |
-| How does a senior get lower berths? | `allocate()` makes two passes over `boolean[] occupied`. Pass 1 (only if `prefersLowerBerth()` is true) takes free LB/SL berths; pass 2 fills any remaining free berths. |
-| How is a berth type found? | `layout[(berthNo - 1) % layout.length]`. AC 3 Tier repeats LB MB UB LB MB UB SL SU every 8 berths, so berth 12 → index 3 → LB. |
-| What if the waitlisted request is still too big? | `promoteWaitlist()` dequeues each entry once; if it doesn't fit, it is enqueued again at the rear, so order is kept. |
-| Do the new features change the official answers? | No. Test cases 1–4 still give 1,134.00, 3,937.50 and the two exceptions; SelfTest checks this. Case 3 still throws the exception and leaves berths unchanged; joining the waitlist is optional afterwards. |
-| Can a passenger cancel only part of a booking? | Yes. Menu 6 asks W (whole) or S (some). With S the clerk picks one coach-class line and how many berths; only those berths are freed and refunded (90%), the bill shows PARTLY CANCELLED, and the freed berths go to the waitlist. Code: `BookingLine.cancelBerths()`, `Booking.cancelPart()`, `ReservationCounter.cancelPart()`. |
-| Why is 41 × AC 3 Tier not offered the waitlist? | The class has only 40 berths in total, so 41 can never be confirmed. |
+| Why is this novel? | IRCTC does not guarantee a family the same bay, has no berth-swap system (people swap informally on the train), and serves the waitlist strictly in order. RailYatra does all three automatically. |
+| How do you find the bay of a berth? | `(berthNo - 1) / layout.length + 1`. Sleeper bays have 8 berths, so berths 1-8 = Bay 1, 9-16 = Bay 2. |
+| How does family seating choose berths? | Step 1: find one bay with enough free berths (for seniors, the one with most free lower berths). Step 2: if none, keep taking the bay with the most free berths, so the group uses the fewest bays. Step 3: inside those bays, lower berths first for seniors, then the rest. |
+| How does the automatic swap pick a berth? | Four steps, families first: (1) a free berth of the wanted type in the same compartment, (2) a passenger in the same compartment who agreed to swap, (3) a free berth anywhere in the coach, (4) a passenger anywhere who agreed to swap; whoever booked first is asked first. A senior who agreed is never moved off a lower berth. |
+| What if nobody matches? | The request waits as SW1, SW2 ... and `servePendingSwaps()` retries every waiting request automatically after each booking by a willing passenger, each "agree to swap" (menu 8 → A) and each cancellation. Nobody has to come back to the counter. |
+| How does the priority waitlist work with a queue? | We keep our circular queue. `promoteWaitlist()` walks the queue three times: first serving priority 2, then 1, then 0. Anyone not served is put back at the rear, so order inside each level stays first come, first served. |
+| Who gets priority 1 vs 2? | 2 = pregnant or disability/medical (clerk enters P or D); 1 = senior citizens (automatic); 0 = everyone else. |
+| Stack vs queue? | Stack is LIFO: undo removes the last line added. Queue is FIFO: the first person waiting (within a priority level) is served first. Both are our own, on arrays. |
+| Can a passenger cancel only part of a booking? | Yes. Menu 6 asks W (whole) or S (some). With S the clerk picks the coach class, then exactly which berths (e.g. `1 3` for H-1 and H-3). Only those berths are freed and refunded (90%); the bill shows PARTLY CANCELLED; freed berths go to the waitlist. Code: `BookingLine.cancelChosen()`, `ReservationCounter.cancelChosen()`. |
+| Do the new features change the official answers? | No. Test cases 1-4 still give 1,134.00, 3,937.50 and the two exceptions; SelfTest checks this (21 checks). |
 
 ---
 
 ## 30-second pitch for the evaluator
 "Small stations still fill reservation forms by hand, so senior concessions are missed and coaches get overbooked.
-RailYatra is a Java console counter that tracks berths live, blocks overbooking with custom checked exceptions,
+RailYatra is a Java console counter that tracks every berth, blocks overbooking with custom checked exceptions,
 applies the 25% senior concession and 5% GST automatically, and gives each booking a PNR with an odd/even window token.
-Our novelty: it allots real berth numbers and gives senior citizens lower berths first, it runs a waitlist that is
-confirmed automatically when someone cancels, and it suggests cheaper classes when a class is full.
-It uses all five units: arrays, operators, OOP with a recursive bill, our own stack for undo and our own queue for the waitlist, inheritance with an interface, and exception handling. All four official test cases pass."
+Our novelty is three things railway booking does not do today: it seats a family together in the same bay,
+it swaps berths automatically with passengers who agreed to swap (same compartment first), and it runs a priority waitlist where
+pregnant and disabled passengers are confirmed first. It uses all five units, with our own stack, queue and sorting on arrays.
+All four official test cases pass, along with 17 more automatic checks."

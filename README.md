@@ -17,7 +17,7 @@ javac -d out $(find src -name "*.java")
 java -cp out railyatra.Main
 ```
 
-**Run the official test cases and novelty checks automatically** (16 PASS/FAIL checks):
+**Run the official test cases and novelty checks automatically** (22 PASS/FAIL checks):
 ```
 java -cp out railyatra.SelfTest
 ```
@@ -32,10 +32,32 @@ In IntelliJ / Eclipse / VS Code, open the folder, mark `src` as the source root,
 4  Booking report      -> total bookings, revenue, most popular class (+ extras)
 5  Exit
 ---- RailYatra extras ----
-6  Cancel booking      -> whole booking OR only some berths; 90% refund, berths go back, waitlist confirmed automatically
-7  View waitlist       -> WL1, WL2 ... in first-come order
+6  Cancel booking      -> whole booking OR exactly the berths you choose; 90% refund, berths go back, waitlist confirmed automatically
+7  View waitlist       -> WL1, WL2 ... in serving order (priority first)
+8  Berth swap          -> ask for a berth type (served automatically), or agree to swap
 ```
-Options 1-5 are exactly as the problem statement asks; 6 and 7 are our novelty features.
+Options 1-5 are exactly as the problem statement asks; 6, 7 and 8 are our additions.
+
+## Web version (optional extra, not the hackathon submission)
+The hackathon submission is the console program above. As an extra, the **same Java classes** also run as a web app,
+using only the JDK's built-in web server (`com.sun.net.httpserver`), with no libraries. All rules (family seating,
+berth swap, priority waitlist, refunds) still run in `ReservationCounter`; the page in `web/static/index.html` only displays them.
+
+**Windows:** double-click `run-web.bat` (it compiles, starts the server and opens the browser), or:
+```
+javac -d out-web (Get-ChildItem -Recurse -Filter *.java src, web\src).FullName
+java -cp out-web railyatra.web.WebServer
+```
+Then open **http://localhost:8080**. Press Ctrl+C in the terminal to stop it.
+
+Tabs: Book · Seat map (every berth, bay by bay) · Bills · Cancel (whole or some berths) · Waitlist (priority order) · Berth swap · Report.
+
+### Live on Render
+The web version is deployed from this repo with the `Dockerfile` (Java 17) and `render.yaml`:
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/pandeylakshya207-max/RailYatra)
+
+On the free plan the server sleeps after 15 minutes without visitors; the first visit after that takes about a minute.
+Bookings are kept in memory, so they reset when the server restarts.
 
 ## Project structure
 ```
@@ -49,7 +71,8 @@ src/railyatra/
 │   ├── Billable.java                interface: subtotal, discount, GST, total
 │   ├── Booking.java                 PNR counter (static), recursive subtotal, final getTotal(), token & 1
 │   ├── BookingLine.java             one coach class + quantity + allotted berth numbers
-│   ├── WaitlistEntry.java           WL1, WL2 ... (novelty 2)
+│   ├── WaitlistEntry.java           WL1, WL2 ... with priority level
+│   ├── SwapRequest.java             SW1, SW2 ... berth-swap requests
 │   └── CoachClass.java              one row of the class list, ?: LOW/OK, boolean[] berth chart (novelty 1)
 ├── people/
 │   ├── Person.java                  base class, final getName()
@@ -74,19 +97,31 @@ Subtotal → minus concession (General 0%, Senior Citizen 25%) → plus 5% GST o
 | 3 | General: 41 × AC 3 Tier | BerthsNotAvailableException, berths unchanged | ✅ |
 | 4 | Coach class id 999 | CoachClassNotFoundException, program continues | ✅ |
 
-## Novelty (our own additions)
-**N1. Smart berth allotment, with senior citizens first.** Every passenger gets a real berth number and type
-(`S-12 LB`, `B-7 SL`, `C-3 W`), using real Indian Railways bay layouts (LB MB UB LB MB UB SL SU).
-Senior citizens are given **lower berths first** (`Passenger.prefersLowerBerth()` is overridden in `SeniorCitizen`).
-Built with a `boolean[]` berth chart per coach class.
+## Novelty: features that railway booking does not offer today
+**1. Family seating together.** Today a family booked on one ticket is often scattered across bays or coaches.
+RailYatra puts every berth of one booking line **in the same bay** (the 8 berths that face each other in Sleeper / AC 3 Tier).
+If no single bay has room, it uses the **fewest bays possible**, and the bill says so ("Bay 2 - all together" or
+"Bays 1, 2 - split across 2 bays"). Code: `CoachClass.allocate()` (3 steps: one bay -> fewest bays -> lower berths for seniors).
 
-**N2. Waitlist with automatic confirmation.** When a class is full, the passenger can join the waitlist (WL1, WL2 ...).
-When anyone cancels the whole booking or just some berths (menu 6, 10% charge, 90% refund), freed berths are given to the waitlist in
-**first-come, first-served** order and a new PNR is printed automatically. The waitlist is **our own circular queue on an array**
-(FIFO), which pairs with our own stack for undo (LIFO).
+**2. Automatic berth swap (menu 8).** Today someone stuck on an upper berth has to ask strangers on the train to swap.
+In RailYatra every passenger is asked at booking: *"Happy to swap your berth if a fellow passenger needs it?"*
+A passenger who wants a different berth just names the **type** they want (LB, MB, UB, SL, SU). RailYatra serves it **automatically**:
+1. a free berth of that type in the same compartment (bay); 2. a passenger in the same compartment who agreed to swap;
+3. a free berth anywhere in the coach; 4. a passenger anywhere in the coach who agreed to swap.
+Both tickets are updated with a note. A request that cannot be served yet waits (SW1, SW2 ...) and is matched **automatically**
+when a willing passenger books, someone agrees later (menu 8 → A), or berths are cancelled. A senior who agreed to swap is never
+moved off a lower berth. Code: `model/SwapRequest.java`, `ReservationCounter.requestSwap()`, `tryServe()`, `servePendingSwaps()`.
 
-**N3. Alternative class suggestions.** If a class doesn't have enough berths, RailYatra lists the classes that do,
-**cheapest first** (bubble sort on an array), with how much each one saves or costs per berth.
+**3. Priority waitlist.** A normal waitlist is strictly first come, first served. In RailYatra, when a cancellation frees berths,
+**pregnant passengers and people with a disability or medical need are confirmed first, then senior citizens, then everyone else**
+(first come, first served inside each level). Built on our own circular queue: `ReservationCounter.promoteWaitlist()` walks the
+queue once per priority level.
+
+## Features that a real counter has (we built them too)
+- Real berth numbers with types (LB, MB, UB, SL, SU), lower berths first for senior citizens.
+- Waitlist (WL1, WL2 ...) with automatic confirmation when someone cancels.
+- Cancel the whole booking or only some berths (90% refund, 10% charge).
+- Cheaper class suggestions when a class is full (bubble sort on an array).
 
 ## Other extras
 1. **Ticket file**: every confirmed booking is saved as `tickets/PNR<n>.txt`, like a printed ticket.

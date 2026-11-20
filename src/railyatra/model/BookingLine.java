@@ -52,6 +52,96 @@ public class BookingLine {
         return released;
     }
 
+    /** Does this line still hold that berth? */
+    public boolean holds(int berthNo) {
+        for (int b : berthNos) {
+            if (b == berthNo) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Berth swap: replace one berth number with another. */
+    public void replaceBerth(int oldNo, int newNo) {
+        for (int i = 0; i < berthNos.length; i++) {
+            if (berthNos[i] == oldNo) {
+                berthNos[i] = newNo;
+                return;
+            }
+        }
+    }
+
+    /** How many different bays this line's berths are spread over. */
+    public int bayCountUsed() {
+        boolean[] seen = new boolean[coachClass.bayCount() + 1];
+        int n = 0;
+        for (int b : berthNos) {
+            int bay = coachClass.bayOf(b);
+            if (!seen[bay]) {
+                seen[bay] = true;
+                n++;
+            }
+        }
+        return n;
+    }
+
+    /** "Bay 1 - all together" or "Bays 1, 2 - split across 2 bays". */
+    public String getBayText() {
+        boolean[] seen = new boolean[coachClass.bayCount() + 1];
+        for (int b : berthNos) {
+            seen[coachClass.bayOf(b)] = true;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int bay = 1; bay < seen.length; bay++) {          // bays listed in order
+            if (seen[bay]) {
+                sb.append(sb.length() == 0 ? "" : ", ").append(bay);
+            }
+        }
+        String word = coachClass.groupWord();
+        int used = bayCountUsed();
+        if (used <= 1) {
+            return word + " " + sb + (berthNos.length > 1 ? " - all together" : "");
+        }
+        return word + "s " + sb + " - split across " + used + " " + word.toLowerCase() + "s";
+    }
+
+    /**
+     * Cancels exactly the chosen berths of this line (e.g. H-3 and H-6), not just the last ones.
+     * Every chosen berth must still be held, and a berth may not be chosen twice.
+     */
+    public int[] cancelChosen(int[] chosen) {
+        if (chosen.length < 1 || chosen.length > getActiveQty()) {
+            throw new IllegalArgumentException("Choose 1 to " + getActiveQty() + " berth(s) on this line.");
+        }
+        for (int i = 0; i < chosen.length; i++) {
+            if (!holds(chosen[i])) {
+                throw new IllegalArgumentException(coachClass.berthLabel(chosen[i]) + " is not on this booking.");
+            }
+            for (int j = 0; j < i; j++) {
+                if (chosen[j] == chosen[i]) {
+                    throw new IllegalArgumentException(coachClass.berthLabel(chosen[i]) + " was chosen twice.");
+                }
+            }
+        }
+        int[] kept = new int[berthNos.length - chosen.length];
+        int k = 0;
+        for (int b : berthNos) {
+            boolean drop = false;
+            for (int c : chosen) {
+                if (c == b) {
+                    drop = true;
+                }
+            }
+            if (!drop) {
+                kept[k++] = b;
+            }
+        }
+        berthNos = kept;
+        cancelledQty += chosen.length;
+        return chosen;
+    }
+
     public int[] getBerthNos() { return berthNos; }
     public CoachClass getCoachClass() { return coachClass; }
     public int getQuantity() { return quantity; }
@@ -75,6 +165,7 @@ public class BookingLine {
                 coachClass.getName(), getActiveQty(), coachClass.getFare(), getLineTotal());
         if (berthNos.length > 0) {
             row += "\n      Berths: " + getBerthText();
+            row += "\n      Seating: " + getBayText();
         }
         if (cancelledQty > 0) {
             row += "\n      Cancelled: " + cancelledQty + " of " + quantity + " berth(s)";

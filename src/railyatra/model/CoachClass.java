@@ -63,25 +63,98 @@ public class CoachClass {
         return coachCode + "-" + berthNo + " " + berthType(berthNo);
     }
 
+    // ------------------------------------------------------------------ bays (NOVELTY: family seating)
+
+    /** Berths per bay = one repeat of the layout (8 in Sleeper / AC 3 Tier, 6 in AC 2 Tier ...). */
+    public int bayCount() {
+        return (occupied.length + layout.length - 1) / layout.length;
+    }
+
+    /** Bay number of a berth: berths 1-8 are Bay 1, 9-16 are Bay 2 ... (integer division). */
+    public int bayOf(int berthNo) {
+        return (berthNo - 1) / layout.length + 1;
+    }
+
+    /** "Bay" for sleeping coaches, "Row" for seating coaches. */
+    public String groupWord() {
+        return hasLowerBerths() ? "Bay" : "Row";
+    }
+
+    public boolean hasLowerBerths() {
+        for (String t : layout) {
+            if (isLower(t)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private int freeInBay(int bay, boolean lowerOnly) {
+        int n = 0;
+        for (int i = bay * layout.length; i < (bay + 1) * layout.length && i < occupied.length; i++) {
+            if (!occupied[i] && (!lowerOnly || isLower(berthType(i + 1)))) {
+                n++;
+            }
+        }
+        return n;
+    }
+
     /**
-     * NOVELTY 1 - allots real berth numbers.
-     * If preferLower is true (senior citizen) we first scan for free LOWER berths,
-     * then fill any remaining berths from whatever is free.
+     * NOVELTY - FAMILY SEATING TOGETHER + lower berths for seniors.
+     * Step 1: look for ONE bay that can hold the whole group (for seniors, the one with most free lower berths).
+     * Step 2: if no single bay fits, use the bays with the most free berths first, so the group is split
+     *         across as FEW bays as possible.
+     * Step 3: inside the chosen bays, seniors get lower berths first, then any free berth.
      * Call only after the booking has been fully validated.
      */
     public int[] allocate(int qty, boolean preferLower) {
+        int bays = bayCount();
+        boolean[] chosen = new boolean[bays];
+
+        // Step 1: one bay for everybody
+        int best = -1;
+        for (int b = 0; b < bays; b++) {
+            if (freeInBay(b, false) >= qty) {
+                if (best == -1 || (preferLower
+                        && Math.min(freeInBay(b, true), qty) > Math.min(freeInBay(best, true), qty))) {
+                    best = b;
+                }
+                if (!preferLower) {
+                    break;                                   // first bay that fits is enough
+                }
+            }
+        }
+        if (best != -1) {
+            chosen[best] = true;
+        } else {
+            // Step 2: fewest bays - keep taking the bay with the most free berths
+            int stillNeeded = qty;
+            while (stillNeeded > 0) {
+                int pick = -1;
+                for (int b = 0; b < bays; b++) {
+                    if (!chosen[b] && freeInBay(b, false) > 0
+                            && (pick == -1 || freeInBay(b, false) > freeInBay(pick, false))) {
+                        pick = b;
+                    }
+                }
+                chosen[pick] = true;
+                stillNeeded -= freeInBay(pick, false);
+            }
+        }
+
+        // Step 3: allot inside the chosen bays
         int[] given = new int[qty];
         int count = 0;
-        if (preferLower) {                                           // pass 1: lower berths only
+        if (preferLower) {                                            // pass 1: lower berths only
             for (int i = 0; i < occupied.length && count < qty; i++) {
-                if (!occupied[i] && isLower(berthType(i + 1))) {
+                if (chosen[i / layout.length] && !occupied[i] && isLower(berthType(i + 1))) {
                     occupied[i] = true;
                     given[count++] = i + 1;
                 }
             }
         }
-        for (int i = 0; i < occupied.length && count < qty; i++) {   // pass 2: any free berth
-            if (!occupied[i]) {
+        for (int i = 0; i < occupied.length && count < qty; i++) {    // pass 2: any free berth
+            if (chosen[i / layout.length] && !occupied[i]) {
                 occupied[i] = true;
                 given[count++] = i + 1;
             }
@@ -91,6 +164,61 @@ public class CoachClass {
         return given;
     }
 
+    // ------------------------------------------------------------------ NOVELTY: berth swap support
+
+    /**
+     * A free berth of the wanted type (LB, MB, UB, SL, SU).
+     * sameBayOnly = true: only in the bay of nearBerth (stays with family); false: anywhere. -1 if none.
+     */
+    public int findFreeOfType(String type, int nearBerth, boolean sameBayOnly) {
+        int bay = bayOf(nearBerth) - 1;
+        int from = sameBayOnly ? bay * layout.length : 0;
+        int to = sameBayOnly ? Math.min((bay + 1) * layout.length, occupied.length) : occupied.length;
+        for (int i = from; i < to; i++) {
+            if (!occupied[i] && berthType(i + 1).equals(type)) {
+                return i + 1;
+            }
+        }
+        return -1;
+    }
+
+    /** The different berth types in this coach, in layout order, e.g. LB, MB, UB, SL, SU. */
+    public String[] berthTypes() {
+        String[] tmp = new String[layout.length];
+        int n = 0;
+        for (String t : layout) {
+            boolean seen = false;
+            for (int i = 0; i < n; i++) {
+                if (tmp[i].equals(t)) {
+                    seen = true;
+                }
+            }
+            if (!seen) {
+                tmp[n++] = t;
+            }
+        }
+        String[] out = new String[n];
+        for (int i = 0; i < n; i++) {
+            out[i] = tmp[i];
+        }
+        return out;
+    }
+
+    public boolean hasType(String type) {
+        for (String t : layout) {
+            if (t.equals(type)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Moves a passenger from one berth to a free berth of the same class. */
+    public void moveBerth(int from, int to) {
+        occupied[from - 1] = false;
+        occupied[to - 1] = true;
+    }
+
     /** Frees berths again when a booking is cancelled. */
     public void release(int[] berthNos) {
         for (int no : berthNos) {
@@ -98,6 +226,11 @@ public class CoachClass {
         }
         berths += berthNos.length;
         berthsSold -= berthNos.length;
+    }
+
+    /** Read-only view of the berth chart (used by the web seat map). */
+    public boolean isOccupied(int berthNo) {
+        return occupied[berthNo - 1];
     }
 
     public int getId() { return id; }

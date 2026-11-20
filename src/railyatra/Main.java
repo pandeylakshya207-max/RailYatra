@@ -8,6 +8,7 @@ import railyatra.exceptions.CoachClassNotFoundException;
 import railyatra.model.Booking;
 import railyatra.model.BookingLine;
 import railyatra.model.CoachClass;
+import railyatra.model.SwapRequest;
 import railyatra.model.WaitlistEntry;
 import railyatra.people.General;
 import railyatra.people.Passenger;
@@ -40,7 +41,7 @@ public class Main {
             int choice;
             do {                                              // UNIT II - do-while: menu shows at least once
                 printMenu();
-                choice = input.readInt("Enter choice (1-7): ", 1, 7);
+                choice = input.readInt("Enter choice (1-8): ", 1, 8);
                 switch (choice) {                             // UNIT II - switch
                     case 1:
                         showClassList();
@@ -62,6 +63,9 @@ public class Main {
                         break;
                     case 7:
                         showWaitlist();
+                        break;
+                    case 8:
+                        berthSwap();
                         break;
                     default:
                         System.out.println("Invalid choice.");   // unreachable, kept for safety
@@ -90,6 +94,7 @@ public class Main {
         char type = input.readChoice("Passenger type (G = General, S = Senior Citizen): ", "GS");
         Passenger passenger = (type == 'G') ? new General(name) : new SeniorCitizen(name);
         System.out.println("Passenger: " + passenger);
+        boolean willing = input.readChoice("Happy to swap your berth if a fellow passenger needs it? (Y/N): ", "YN") == 'Y';
 
         ItemStack cart = new ItemStack(MAX_LINES);
         boolean finished = false;
@@ -138,8 +143,12 @@ public class Main {
             }
 
             Booking booking = counter.confirm(passenger, cart);
+            String[] served = willing ? counter.setSwapWilling(booking, true) : new String[0];
             System.out.println();
             System.out.print(booking);
+            for (String m : served) {
+                System.out.println("*** " + m);
+            }
 
             try {
                 String path = counter.saveTicket(booking);
@@ -173,9 +182,10 @@ public class Main {
         if (qty <= full.getTotalBerths()) {
             char yes = input.readChoice("    Join the waitlist for " + qty + " x " + full.getName() + "? (Y/N): ", "YN");
             if (yes == 'Y') {
+                char cat = input.readChoice("    Priority need? (P = pregnant, D = disability/medical, N = none): ", "PDN");
                 try {
-                    WaitlistEntry e = counter.addToWaitlist(passenger, full, qty);
-                    System.out.println("    Added to waitlist as " + e.getWlNo()
+                    WaitlistEntry e = counter.addToWaitlist(passenger, full, qty, cat);
+                    System.out.println("    Added to waitlist as " + e.getWlNo() + ", priority " + e.getPriorityLabel()
                             + ". It will be confirmed automatically when berths are cancelled.");
                 } catch (IllegalStateException ex) {
                     System.out.println("    ! " + ex.getMessage());
@@ -229,19 +239,26 @@ public class Main {
                             l.getActiveQty(), l.getBerthText());
                 }
             }
-            int pick = input.readInt("Which line? (1-" + shown + "): ", 1, shown);
+            int pick = input.readInt("Which coach class? (1-" + shown + "): ", 1, shown);
             BookingLine chosen = b.getLine(lineNo[pick - 1]);
-            int n = input.readInt("How many " + chosen.getCoachClass().getName() + " berths to cancel? (1-"
-                    + chosen.getActiveQty() + "): ", 1, chosen.getActiveQty());
-            char yes = input.readChoice("Cancel " + n + " x " + chosen.getCoachClass().getName()
-                    + "? 10% charge applies. (Y/N): ", "YN");
+            int[] held = chosen.getBerthNos();
+            System.out.println("Berths on this line:");
+            for (int i = 0; i < held.length; i++) {
+                System.out.println("  " + (i + 1) + ". " + chosen.getCoachClass().berthLabel(held[i]));
+            }
+            int[] pickBerths = readBerthChoice(held);
+            StringBuilder names = new StringBuilder();
+            for (int i = 0; i < pickBerths.length; i++) {
+                names.append(i > 0 ? ", " : "").append(chosen.getCoachClass().berthLabel(pickBerths[i]));
+            }
+            char yes = input.readChoice("Cancel " + names + "? 10% charge applies. (Y/N): ", "YN");
             if (yes == 'N') {
                 System.out.println("Not cancelled.");
                 return;
             }
-            refund = counter.cancelPart(b, lineNo[pick - 1], n);
-            System.out.printf("Cancelled %d x %s on %s. Refund: Rs. %,.2f. Berths returned to the chart.%n",
-                    n, chosen.getCoachClass().getName(), b.getPnr(), refund);
+            refund = counter.cancelChosen(b, lineNo[pick - 1], pickBerths);
+            System.out.printf("Cancelled %s on %s. Refund: Rs. %,.2f. Berths returned to the chart.%n",
+                    names, b.getPnr(), refund);
             System.out.println("\nUpdated bill:");
             System.out.print(b);
         }
@@ -249,6 +266,9 @@ public class Main {
         Booking[] promoted = counter.promoteWaitlist();
         if (promoted.length == 0) {
             System.out.println("No waitlisted passenger could be confirmed with the freed berths.");
+        }
+        for (String m : counter.servePendingSwaps()) {
+            System.out.println("*** " + m);
         }
         for (Booking p : promoted) {
             System.out.println("\n*** Waitlist confirmed automatically ***");
@@ -261,17 +281,172 @@ public class Main {
         }
     }
 
+    /**
+     * Reads which berths to cancel, by their list numbers, e.g. "1 3" or "1,3".
+     * Re-asks on letters, numbers outside the list or repeats. Returns the berth numbers.
+     */
+    private static int[] readBerthChoice(int[] held) {
+        while (true) {
+            String text = input.readLine("Which berth(s) to cancel? Type list numbers, e.g. 1 3: ");
+            String[] parts = text.trim().split("[ ,]+");
+            int[] out = new int[parts.length];
+            boolean ok = !text.trim().isEmpty();
+            for (int i = 0; i < parts.length && ok; i++) {
+                try {
+                    int n = Integer.parseInt(parts[i]);
+                    if (n < 1 || n > held.length) {
+                        ok = false;
+                    } else {
+                        out[i] = held[n - 1];
+                        for (int j = 0; j < i; j++) {
+                            if (out[j] == out[i]) {
+                                ok = false;
+                            }
+                        }
+                    }
+                } catch (NumberFormatException e) {
+                    ok = false;
+                }
+            }
+            if (ok) {
+                return out;
+            }
+            System.out.println("  ! Type numbers from 1 to " + held.length + ", each once, e.g. 1 3");
+        }
+    }
+
     // ------------------------------------------------------------------ 7. waitlist (NOVELTY 2)
 
     private static void showWaitlist() {
-        System.out.println("\n================== WAITLIST (first come, first served) ==================");
+        System.out.println("\n================== WAITLIST (priority first, then first come) ==================");
         WaitlistQueue q = counter.getWaitlist();
         if (q.isEmpty()) {
             System.out.println("Waitlist is empty.");
             return;
         }
-        for (int i = 0; i < q.size(); i++) {
-            System.out.println("  " + (i + 1) + ". " + q.get(i));
+        // Shown in the order they will be served: high priority first, then first come, first served
+        int pos = 0;
+        for (int level = WaitlistEntry.PRIORITY_MEDICAL; level >= WaitlistEntry.PRIORITY_NORMAL; level--) {
+            for (int i = 0; i < q.size(); i++) {
+                if (q.get(i).getPriority() == level) {
+                    pos++;
+                    System.out.println("  " + pos + ". " + q.get(i));
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ 8. berth swap (NOVELTY)
+
+    private static void berthSwap() {
+        System.out.println("\n================== BERTH SWAP (automatic) ==================");
+        SwapRequest[] open = counter.getOpenSwaps();
+        if (open.length > 0) {
+            System.out.println("Waiting swap requests (matched automatically when possible):");
+            for (SwapRequest r : open) {
+                System.out.println("  " + r);
+            }
+        } else {
+            System.out.println("No waiting swap requests.");
+        }
+        if (counter.getBookingCount() == 0) {
+            System.out.println("No bookings yet today.");
+            return;
+        }
+        String pnr = input.readLine("\nEnter booking id (or press Enter to go back): ");
+        if (pnr.isEmpty()) {
+            return;
+        }
+        Booking b = counter.findBooking(pnr);
+        if (b == null || b.isCancelled()) {
+            System.out.println("  ! No active booking with id '" + pnr + "'.");
+            return;
+        }
+        char what = input.readChoice("R = request a different berth,  A = " + (b.isSwapWilling()
+                ? "stop being available for swaps" : "agree to swap with fellow passengers") + "  (R/A): ", "RA");
+        if (what == 'A') {
+            String[] served = counter.setSwapWilling(b, !b.isSwapWilling());
+            System.out.println("  " + b.getPnr() + (b.isSwapWilling()
+                    ? " is now happy to swap berths." : " will no longer be asked to swap."));
+            for (String m : served) {
+                System.out.println("  *** " + m);
+            }
+            return;
+        }
+
+        // R: pick one of this booking's sleeping berths
+        int[] lineOf = new int[64];
+        int[] berthOf = new int[64];
+        int n = 0;
+        for (int i = 0; i < b.getLineCount(); i++) {
+            BookingLine l = b.getLine(i);
+            if (!l.getCoachClass().hasLowerBerths()) {
+                continue;
+            }
+            for (int no : l.getBerthNos()) {
+                if (n < lineOf.length) {
+                    lineOf[n] = i;
+                    berthOf[n] = no;
+                    n++;
+                    System.out.println("  " + n + ". " + l.getCoachClass().berthLabel(no)
+                            + "  (" + l.getCoachClass().getName() + ")");
+                }
+            }
+        }
+        if (n == 0) {
+            System.out.println("  ! This booking has only seats (no sleeping berths) to swap.");
+            return;
+        }
+        int pick = input.readInt("Which berth to change? (1-" + n + "): ", 1, n);
+        CoachClass c = b.getLine(lineOf[pick - 1]).getCoachClass();
+        int berthNo = berthOf[pick - 1];
+
+        // which type does the passenger want? (every type in this coach except the current one)
+        String[] types = c.berthTypes();
+        String[] options = new String[types.length];
+        int m = 0;
+        for (String t : types) {
+            if (!t.equals(c.berthType(berthNo))) {
+                options[m++] = t;
+                System.out.println("  " + m + ". " + t + "  " + typeName(t));
+            }
+        }
+        int want = input.readInt("Which berth type do you want? (1-" + m + "): ", 1, m);
+        try {
+            String result = counter.requestSwap(b, lineOf[pick - 1], berthNo, options[want - 1]);
+            System.out.println("  " + result);
+            Booking other = counter.takeLastSwapPartner();
+            if (!result.startsWith("No free")) {
+                System.out.println("\nUpdated ticket:");
+                System.out.print(b);
+                saveQuietly(b);
+            }
+            if (other != null) {
+                System.out.println("Partner's updated ticket:");
+                System.out.print(other);
+                saveQuietly(other);
+            }
+        } catch (IllegalArgumentException | IllegalStateException e) {   // multi-catch
+            System.out.println("  ! " + e.getMessage());
+        }
+    }
+
+    private static String typeName(String t) {
+        switch (t) {
+            case "LB": return "(lower)";
+            case "MB": return "(middle)";
+            case "UB": return "(upper)";
+            case "SL": return "(side lower)";
+            case "SU": return "(side upper)";
+            default:   return "";
+        }
+    }
+
+    private static void saveQuietly(Booking b) {
+        try {
+            counter.saveTicket(b);
+        } catch (IOException e) {
+            System.out.println("(Ticket file could not be saved: " + e.getMessage() + ")");
         }
     }
 
@@ -363,6 +538,7 @@ public class Main {
         System.out.println(" 5  Exit");
         System.out.println(" ---- RailYatra extras ----");
         System.out.println(" 6  Cancel booking - whole or some berths (refund + auto-confirm waitlist)");
-        System.out.println(" 7  View waitlist");
+        System.out.println(" 7  View waitlist (priority order)");
+        System.out.println(" 8  Berth swap (automatic: ask for a berth type, or agree to swap)");
     }
 }

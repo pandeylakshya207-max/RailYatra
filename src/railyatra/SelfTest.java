@@ -116,6 +116,62 @@ public class SelfTest {
                 + (part.isPartlyCancelled() ? ", PARTLY" : ", NOT PARTLY"));
         check("P   Only 1 berth freed", String.valueOf(sleeperBefore + 1), String.valueOf(sleeper.getBerths()));
 
+        // ---------------- NEW NOVELTY: family seating, berth swap, priority waitlist ----------------
+        System.out.println("\nNew novelty checks");
+
+        // F: family seating together (fresh counter). Sleeper bays are 8 berths each.
+        ReservationCounter fam = new ReservationCounter();
+        CoachClass sl = fam.findCoachClass(101);
+        cart = new ItemStack(10);
+        cart.push(new BookingLine(sl, 6));
+        Booking f1 = fam.confirm(new General("Family A"), cart);           // takes 6 of Bay 1
+        cart = new ItemStack(10);
+        cart.push(new BookingLine(sl, 4));
+        Booking f2 = fam.confirm(new General("Family B"), cart);           // Bay 1 has only 2 left
+        check("F   Family of 6 in one bay", "Bay 1 - all together", f1.getLine(0).getBayText());
+        check("F   Family of 4 kept together in next bay", "Bay 2 - all together", f2.getLine(0).getBayText());
+
+        // S: automatic berth swap (fresh counter). AC First Class = LB UB LB UB in each bay of 4.
+        ReservationCounter sw = new ReservationCounter();
+        CoachClass fc = sw.findCoachClass(104);
+        cart = new ItemStack(10);
+        cart.push(new BookingLine(fc, 4));
+        Booking g1 = sw.confirm(new General("Willing"), cart);             // H-1..H-4, Bay 1
+        cart = new ItemStack(10);
+        cart.push(new BookingLine(fc, 4));
+        Booking g2 = sw.confirm(new SeniorCitizen("Wanter"), cart);        // H-5..H-8, Bay 2 (class full)
+        String r1 = sw.requestSwap(g2, 0, 6, "LB");                       // H-6 UB wants LB: nobody willing yet
+        check("S   No willing passenger: request waits", "waits", r1.startsWith("No free") ? "waits" : r1);
+        String[] served = sw.setSwapWilling(g1, true);                    // Willing agrees -> served at once
+        check("S   Agreeing to swap serves it automatically", "1 served, Wanter has an LB in place of H-6",
+                served.length + " served, Wanter "
+                        + (!g2.getLine(0).holds(6) && (g2.getLine(0).holds(1) || g2.getLine(0).holds(3))
+                        ? "has an LB in place of H-6" : "unchanged"));
+
+        // Q: priority waitlist (fresh counter). Fill AC First, waitlist normal first, pregnant second.
+        ReservationCounter pq = new ReservationCounter();
+        CoachClass pf = pq.findCoachClass(104);
+        cart = new ItemStack(10);
+        cart.push(new BookingLine(pf, 8));
+        Booking filler = pq.confirm(new General("Filler"), cart);
+        pq.addToWaitlist(new General("Normal First"), pf, 1, 'N');
+        pq.addToWaitlist(new General("Pregnant Second"), pf, 1, 'P');
+        pq.cancelPart(filler, 0, 1);                                       // frees ONE berth
+        Booking[] got = pq.promoteWaitlist();
+        check("Q   Pregnant passenger confirmed first", "Pregnant Second",
+                got.length == 1 ? got[0].getPassenger().getName() : got.length + " promoted");
+
+        // C: cancel exactly the chosen berths (fresh counter). AC First: H-1 LB, H-2 UB, H-3 LB, H-4 UB.
+        ReservationCounter ch = new ReservationCounter();
+        CoachClass chc = ch.findCoachClass(104);
+        cart = new ItemStack(10);
+        cart.push(new BookingLine(chc, 4));
+        Booking pick = ch.confirm(new General("Chooser"), cart);
+        ch.cancelChosen(pick, 0, new int[] { 1, 3 });                        // cancel H-1 and H-3 only
+        check("C   Cancel chosen berths H-1, H-3", "H-2 UB, H-4 UB kept; H-1, H-3 free",
+                pick.getLine(0).getBerthText() + " kept; "
+                        + (!chc.isOccupied(1) && !chc.isOccupied(3) ? "H-1, H-3 free" : "NOT freed"));
+
         System.out.println("\n" + passed + " / " + total + " checks passed.");
     }
 

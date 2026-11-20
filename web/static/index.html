@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RailYatra · Railway Reservation Counter</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect x=%2710%27 y=%276%27 width=%2744%27 height=%2742%27 rx=%2712%27 fill=%27%23F2A541%27/%3E%3Crect x=%2717%27 y=%2713%27 width=%2730%27 height=%2714%27 rx=%273%27 fill=%27%237A1F2B%27/%3E%3C/svg%3E">
+<style>
+  :root {
+    --maroon: #7A1F2B; --maroon-dark: #4E121B; --saffron: #F2A541; --saffron-soft: #FBEBD3;
+    --ink: #1F2328; --grey: #5B6470; --line: #E4DCDC; --soft: #F6F1F1; --white: #FFFFFF;
+    --green: #2E7D4F; --green-soft: #E3F2E8; --red: #B3261E; --red-soft: #FBE9E7;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Calibri, "Segoe UI", Arial, sans-serif; color: var(--ink); background: var(--soft); font-size: 15px; }
+  header { background: var(--maroon); color: var(--white); padding: 18px 32px; display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand svg { width: 40px; height: 40px; }
+  .brand h1 { margin: 0; font-family: Cambria, Georgia, serif; font-size: 28px; }
+  .brand p { margin: 0; color: var(--saffron); font-size: 14px; }
+  .stats { margin-left: auto; display: flex; gap: 10px; flex-wrap: wrap; }
+  .stat { background: var(--maroon-dark); border-radius: 10px; padding: 8px 14px; min-width: 110px; }
+  .stat b { display: block; font-size: 18px; color: var(--saffron); }
+  .stat span { font-size: 12px; opacity: .85; }
+  nav { background: var(--white); border-bottom: 1px solid var(--line); padding: 0 24px; display: flex; gap: 4px; overflow-x: auto; position: sticky; top: 0; z-index: 5; }
+  nav button { background: none; border: none; padding: 14px 16px; font: inherit; color: var(--grey); cursor: pointer; border-bottom: 3px solid transparent; white-space: nowrap; }
+  nav button.active { color: var(--maroon); border-bottom-color: var(--maroon); font-weight: 700; }
+  nav button .new { background: var(--saffron); color: var(--maroon-dark); font-size: 10px; font-weight: 700; border-radius: 6px; padding: 1px 5px; margin-left: 4px; }
+  main { max-width: 1180px; margin: 0 auto; padding: 24px; }
+  section { display: none; }
+  section.active { display: block; }
+  h2 { font-family: Cambria, Georgia, serif; color: var(--maroon); margin: 0 0 4px; font-size: 26px; }
+  .lead { color: var(--grey); margin: 0 0 20px; }
+  .grid { display: grid; grid-template-columns: 420px 1fr; gap: 20px; align-items: start; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--white); border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  .card h3 { margin: 0 0 12px; font-size: 17px; color: var(--maroon); }
+  label { display: block; font-size: 13px; color: var(--grey); margin: 12px 0 4px; }
+  input, select { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; background: var(--white); }
+  input:focus, select:focus { outline: 2px solid var(--saffron); border-color: var(--saffron); }
+  .row { display: flex; gap: 8px; align-items: end; }
+  .row > * { flex: 1; }
+  .row > .narrow { flex: 0 0 90px; }
+  .toggle { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .toggle button { flex: 1; border: none; background: var(--white); padding: 9px; font: inherit; cursor: pointer; color: var(--grey); }
+  .toggle button.on { background: var(--maroon); color: var(--white); }
+  .btn { background: var(--maroon); color: var(--white); border: none; border-radius: 8px; padding: 10px 16px; font: inherit; font-weight: 700; cursor: pointer; }
+  .btn:hover { background: var(--maroon-dark); }
+  .btn.alt { background: var(--saffron); color: var(--maroon-dark); }
+  .btn.ghost { background: var(--white); color: var(--maroon); border: 1px solid var(--maroon); }
+  .btn.small { padding: 6px 10px; font-size: 13px; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .actions { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 12px; color: var(--grey); font-weight: 600; padding: 8px; border-bottom: 1px solid var(--line); }
+  td { padding: 9px 8px; border-bottom: 1px solid var(--soft); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; }
+  .badge.ok { background: var(--green-soft); color: var(--green); }
+  .badge.low { background: var(--red-soft); color: var(--red); }
+  .badge.conf { background: var(--green-soft); color: var(--green); }
+  .badge.part { background: var(--saffron-soft); color: #8A5A00; }
+  .badge.canc { background: var(--red-soft); color: var(--red); }
+  .badge.p2 { background: var(--red-soft); color: var(--red); }
+  .badge.p1 { background: var(--saffron-soft); color: #8A5A00; }
+  .badge.p0 { background: var(--soft); color: var(--grey); }
+  .cart { list-style: none; padding: 0; margin: 12px 0 0; }
+  .cart li { display: flex; justify-content: space-between; padding: 8px 10px; background: var(--soft); border-radius: 8px; margin-bottom: 6px; }
+  .empty { color: var(--grey); font-style: italic; }
+  .msg { border-radius: 10px; padding: 12px 14px; margin: 14px 0; }
+  .msg.err { background: var(--red-soft); color: var(--red); }
+  .msg.ok { background: var(--green-soft); color: var(--green); }
+  .msg.info { background: var(--saffron-soft); color: #6B4500; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .chip { border: 1px solid var(--line); border-radius: 16px; padding: 4px 10px; font-size: 13px; background: var(--white); }
+  .chip.lower { border-color: var(--green); color: var(--green); font-weight: 600; }
+  button.chip { cursor: pointer; font: inherit; font-size: 13px; }
+  button.chip:hover { border-color: var(--maroon); }
+  button.chip.sel { background: var(--maroon); color: var(--white); border-color: var(--maroon); }
+  /* ticket */
+  .ticket { background: var(--white); border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.08); margin-bottom: 16px; }
+  .ticket .top { background: var(--maroon); color: var(--white); padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .ticket .top .pnr { font-family: Cambria, Georgia, serif; font-size: 22px; font-weight: 700; color: var(--saffron); }
+  .ticket .body { padding: 14px 18px; }
+  .ticket .meta { display: flex; gap: 24px; flex-wrap: wrap; color: var(--grey); font-size: 14px; margin-bottom: 10px; }
+  .ticket .meta b { color: var(--ink); }
+  .ticket .line { padding: 10px 0; border-top: 1px dashed var(--line); }
+  .ticket .line .head { display: flex; justify-content: space-between; font-weight: 600; }
+  .ticket .seating { font-size: 13px; color: var(--green); margin-top: 4px; }
+  .ticket .seating.split { color: #8A5A00; }
+  .ticket .totals { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 8px; }
+  .ticket .totals div { display: flex; justify-content: space-between; padding: 2px 0; }
+  .ticket .totals .grand { font-size: 18px; font-weight: 700; color: var(--maroon); }
+  .ticket .note { font-size: 13px; background: var(--saffron-soft); border-radius: 6px; padding: 6px 10px; margin-bottom: 6px; }
+  /* seat map */
+  .bays { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+  .bay { background: var(--white); border-radius: 10px; padding: 12px; }
+  .bay h4 { margin: 0 0 8px; font-size: 14px; color: var(--maroon); display: flex; justify-content: space-between; }
+  .berths { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .berth { border: 1px solid var(--line); border-radius: 6px; padding: 6px 2px; text-align: center; font-size: 12px; background: var(--white); }
+  .berth b { display: block; font-size: 14px; }
+  .berth.lower { border-color: var(--green); }
+  .berth.taken { background: var(--maroon); color: var(--white); border-color: var(--maroon); }
+  .berth.taken.lower { box-shadow: inset 0 -3px 0 var(--saffron); }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--grey); margin: 6px 0 14px; }
+  .legend i { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: -2px; margin-right: 4px; border: 1px solid var(--line); }
+  /* report */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .tile { background: var(--white); border-radius: 12px; padding: 16px; }
+  .tile b { display: block; font-size: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--maroon); font-family: Cambria, Georgia, serif; }
+  .tile span { color: var(--grey); font-size: 13px; }
+  .bar { height: 12px; background: var(--soft); border-radius: 6px; overflow: hidden; }
+  .bar div { height: 100%; background: var(--maroon); }
+  .novelty { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+  @media (max-width: 900px) { .novelty { grid-template-columns: 1fr; } }
+  .novelty .card { border-top: 4px solid var(--saffron); }
+  .novelty .card p { margin: 0; color: var(--grey); font-size: 14px; }
+  footer { text-align: center; color: var(--grey); font-size: 13px; padding: 24px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <svg viewBox="0 0 64 64" aria-hidden="true"><rect x="10" y="6" width="44" height="42" rx="12" fill="#F2A541"/><rect x="17" y="13" width="30" height="14" rx="3" fill="#7A1F2B"/><circle cx="23" cy="38" r="4" fill="#7A1F2B"/><circle cx="41" cy="38" r="4" fill="#7A1F2B"/><path d="M18 50 L12 60 M46 50 L52 60" stroke="#F2A541" stroke-width="4" stroke-linecap="round"/></svg>
+    <div>
+      <h1>RailYatra</h1>
+      <p>Railway reservation counter · powered by Java</p>
+    </div>
+  </div>
+  <div class="stats">
+    <div class="stat"><b id="sBookings">0</b><span>Bookings</span></div>
+    <div class="stat"><b id="sRevenue">Rs. 0</b><span>Revenue</span></div>
+    <div class="stat"><b id="sWaitlist">0</b><span>On waitlist</span></div>
+  </div>
+</header>
+
+<nav id="tabs">
+  <button data-tab="book" class="active">Book</button>
+  <button data-tab="seats">Seat map</button>
+  <button data-tab="bills">Bills</button>
+  <button data-tab="cancel">Cancel</button>
+  <button data-tab="waitlist">Waitlist<span class="new">PRIORITY</span></button>
+  <button data-tab="swap">Berth swap<span class="new">NEW</span></button>
+  <button data-tab="report">Report</button>
+</nav>
+
+<main>
+
+<!-- ================= BOOK ================= -->
+<section id="book" class="active">
+  <h2>New booking</h2>
+  <p class="lead">Add one or more coach classes, then confirm. A group is always seated together in one bay when possible.</p>
+  <div class="novelty">
+    <div class="card"><h3>Family seating together</h3><p>Every berth of a booking goes in the same bay; if no bay has room, the fewest bays.</p></div>
+    <div class="card"><h3>Automatic berth swap</h3><p>Ask for the berth type you want; a passenger who agreed to swap is matched at once, same compartment first.</p></div>
+    <div class="card"><h3>Priority waitlist</h3><p>Pregnant and disabled passengers are confirmed first, then seniors, then everyone else.</p></div>
+  </div>
+  <div class="grid">
+    <div class="card">
+      <h3>Passenger</h3>
+      <label for="bName">Name</label>
+      <input id="bName" placeholder="e.g. Ravi Kumar">
+      <label>Type</label>
+      <div class="toggle" id="bType">
+        <button data-v="G" class="on">General</button>
+        <button data-v="S">Senior Citizen (25% off)</button>
+      </div>
+      <label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-size:14px;margin-top:14px">
+        <input type="checkbox" id="bWilling" style="width:auto"> Happy to swap my berth if a fellow passenger needs it</label>
+      <h3 style="margin-top:18px">Coach classes</h3>
+      <div class="row">
+        <div><label for="bClass">Class</label><select id="bClass"></select></div>
+        <div class="narrow"><label for="bQty">Berths</label><input id="bQty" type="number" min="1" value="1"></div>
+      </div>
+      <div class="actions">
+        <button class="btn ghost small" id="bAdd">+ Add to booking</button>
+        <button class="btn ghost small" id="bUndo">Undo last (-1)</button>
+      </div>
+      <ul class="cart" id="bCart"></ul>
+      <div class="actions"><button class="btn" id="bConfirm">Confirm booking</button></div>
+      <div id="bMsg"></div>
+    </div>
+    <div>
+      <div class="card">
+        <h3>Class list</h3>
+        <table><thead><tr><th>Id</th><th>Coach class</th><th>Category</th><th class="num">Fare (Rs)</th><th class="num">Berths</th><th>Status</th></tr></thead><tbody id="classRows"></tbody></table>
+      </div>
+      <div id="bResult" style="margin-top:16px"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= SEAT MAP ================= -->
+<section id="seats">
+  <h2>Seat map</h2>
+  <p class="lead">Every berth, bay by bay. Hover over a taken berth to see who holds it.</p>
+  <div class="card" style="margin-bottom:16px">
+    <div class="row"><div><label for="sClass">Coach class</label><select id="sClass"></select></div></div>
+    <div class="legend" style="margin-top:12px">
+      <span><i></i>Free</span><span><i style="border-color:var(--green)"></i>Free lower (LB / SL)</span>
+      <span><i style="background:var(--maroon);border-color:var(--maroon)"></i>Taken</span>
+    </div>
+  </div>
+  <div class="bays" id="bays"></div>
+</section>
+
+<!-- ================= BILLS ================= -->
+<section id="bills">
+  <h2>Bills</h2>
+  <p class="lead">Every booking today, newest first. Search by PNR.</p>
+  <div class="card" style="margin-bottom:16px">
+    <div class="row"><div><label for="billSearch">PNR</label><input id="billSearch" placeholder="e.g. PNR2 or 2"></div>
+      <div class="narrow"><button class="btn" id="billFind">Find</button></div></div>
+  </div>
+  <div id="billList"></div>
+</section>
+
+<!-- ================= CANCEL ================= -->
+<section id="cancel">
+  <h2>Cancel a booking</h2>
+  <p class="lead">Cancel the whole booking or tap exactly the berths to cancel. 90% is refunded; freed berths go straight to the waitlist.</p>
+  <div class="grid">
+    <div class="card">
+      <div class="row"><div><label for="cPnr">PNR</label><input id="cPnr" placeholder="e.g. PNR1"></div>
+        <div class="narrow"><button class="btn" id="cLoad">Load</button></div></div>
+      <div id="cForm"></div>
+      <div id="cMsg"></div>
+    </div>
+    <div id="cResult"></div>
+  </div>
+</section>
+
+<!-- ================= WAITLIST ================= -->
+<section id="waitlist">
+  <h2>Priority waitlist</h2>
+  <p class="lead">Shown in the order passengers will be confirmed: HIGH (pregnant / disability) first, then seniors, then first come, first served.</p>
+  <div class="card"><table><thead><tr><th>#</th><th>WL</th><th>Passenger</th><th>Class</th><th class="num">Berths</th><th>Priority</th></tr></thead><tbody id="wlRows"></tbody></table></div>
+</section>
+
+<!-- ================= SWAP ================= -->
+<section id="swap">
+  <h2>Berth swap</h2>
+  <p class="lead">Ask for the berth type you want. RailYatra uses a free berth or a passenger who agreed to swap (same compartment first) and updates both tickets at once. Requests that cannot be served yet are matched automatically later.</p>
+  <div class="grid">
+    <div class="card">
+      <div class="row"><div><label for="wPnr">PNR</label><input id="wPnr" placeholder="e.g. PNR6"></div>
+        <div class="narrow"><button class="btn" id="wLoad">Load</button></div></div>
+      <div id="wForm"></div>
+      <div id="wMsg"></div>
+      <h3 style="margin-top:20px">Waiting swap requests</h3>
+      <div id="wOpen"></div>
+    </div>
+    <div id="wResult"></div>
+  </div>
+</section>
+
+<!-- ================= REPORT ================= -->
+<section id="report">
+  <h2>End-of-day report</h2>
+  <p class="lead">Revenue includes the 10% kept on cancellations.</p>
+  <div class="tiles" id="tiles"></div>
+  <div class="card"><h3>Occupancy by coach class</h3><table><tbody id="occRows"></tbody></table></div>
+</section>
+
+</main>
+<footer>RailYatra · SEC-I Java Hackathon · Section 3 H · the booking rules run in Java (ReservationCounter), this page only displays them</footer>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const rs = n => 'Rs. ' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+async function api(path, data) {
+  const opts = data ? { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(data) } : {};
+  try {
+    const r = await fetch(path, opts);
+    return await r.json();
+  } catch (e) {
+    return { ok: false, error: 'Cannot reach the Java server. Is WebServer still running?' };
+  }
+}
+const msg = (el, kind, text) => { $(el).innerHTML = text ? `<div class="msg ${kind}">${text}</div>` : ''; };
+
+// ---------- tabs ----------
+document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('active', x === b));
+  document.querySelectorAll('main section').forEach(s => s.classList.toggle('active', s.id === b.dataset.tab));
+  refresh(b.dataset.tab);
+});
+
+let classes = [];
+async function loadClasses() {
+  classes = await api('/api/classes');
+  $('classRows').innerHTML = classes.map(c => `<tr><td>${c.id}</td><td><b>${esc(c.name)}</b></td><td>${esc(c.category)}</td>
+    <td class="num">${c.fare.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td><td class="num">${c.berths} / ${c.total}</td>
+    <td><span class="badge ${c.status === 'LOW' ? 'low' : 'ok'}">${c.status}</span></td></tr>`).join('');
+  const opts = classes.map(c => `<option value="${c.id}">${c.id} · ${esc(c.name)} (Rs. ${c.fare}, ${c.berths} left)</option>`).join('');
+  const keep = [$('bClass').value, $('sClass').value];
+  $('bClass').innerHTML = opts; $('sClass').innerHTML = opts;
+  if (keep[0]) $('bClass').value = keep[0];
+  if (keep[1]) $('sClass').value = keep[1];
+}
+async function loadStats() {
+  const r = await api('/api/report');
+  $('sBookings').textContent = r.bookings; $('sRevenue').textContent = rs(r.revenue); $('sWaitlist').textContent = r.waitlist;
+  return r;
+}
+async function refresh(tab) {
+  await loadClasses(); await loadStats();
+  if (tab === 'seats') seatMap();
+  if (tab === 'bills') bills();
+  if (tab === 'waitlist') waitlist();
+  if (tab === 'swap') openSwaps();
+  if (tab === 'report') report();
+}
+
+// ---------- ticket ----------
+function ticket(b, title) {
+  const badge = b.status === 'CONFIRMED' ? 'conf' : b.status === 'CANCELLED' ? 'canc' : 'part';
+  const lines = b.lines.map(l => `<div class="line"><div class="head"><span>${esc(l.className)} · ${l.qty} × ${rs(l.fare)}</span><span>${rs(l.total)}</span></div>
+      <div class="chips">${l.berths.map(x => `<span class="chip ${x.lower ? 'lower' : ''}">${esc(x.label)}</span>`).join('')}</div>
+      ${l.seating ? `<div class="seating ${l.seating.includes('split') ? 'split' : ''}">${esc(l.seating)}</div>` : ''}
+      ${l.cancelled ? `<div class="seating split">Cancelled: ${l.cancelled} berth(s)</div>` : ''}</div>`).join('');
+  return `<div class="ticket">${title ? `<div class="msg info" style="margin:0;border-radius:0">${esc(title)}</div>` : ''}
+    <div class="top"><span class="pnr">${esc(b.pnr)}</span><span class="badge ${badge}">${b.status}</span></div>
+    <div class="body">
+      <div class="meta"><span>Passenger <b>${esc(b.name)}</b> (${esc(b.type)})</span><span>Token <b>${b.token}</b> → <b>${esc(b.window)}</b></span>
+        ${b.swapWilling ? '<span class="badge part">Happy to swap</span>' : ''}</div>
+      ${b.notes.map(n => `<div class="note">${esc(n)}</div>`).join('')}
+      ${lines}
+      <div class="totals">
+        <div><span>Subtotal</span><span>${rs(b.subtotal)}</span></div>
+        <div><span>Concession (${Math.round(b.discountRate * 100)}%)</span><span>− ${rs(b.discount)}</span></div>
+        <div><span>GST (5%)</span><span>+ ${rs(b.gst)}</span></div>
+        <div class="grand"><span>Total</span><span>${rs(b.total)}</span></div>
+        ${b.discount > 0 ? `<div style="color:var(--green)"><span>You saved</span><span>${rs(b.discount)}</span></div>` : ''}
+        ${b.refund > 0 ? `<div style="color:#8A5A00"><span>Refunded (after 10% charge)</span><span>${rs(b.refund)}</span></div>` : ''}
+      </div>
+    </div></div>`;
+}
+
+// ---------- book ----------
+let passengerType = 'G';
+let cart = [];
+document.querySelectorAll('#bType button').forEach(b => b.onclick = () => {
+  passengerType = b.dataset.v;
+  document.querySelectorAll('#bType button').forEach(x => x.classList.toggle('on', x === b));
+});
+function drawCart() {
+  $('bCart').innerHTML = cart.length ? cart.map((l, i) => `<li><span>${i + 1}. ${esc(l.name)}</span><b>${l.qty} berth(s)</b></li>`).join('')
+    : '<li class="empty">No coach class added yet.</li>';
+}
+$('bAdd').onclick = () => {
+  const id = Number($('bClass').value), qty = Number($('bQty').value);
+  if (!Number.isInteger(qty) || qty < 1) { msg('bMsg', 'err', 'Quantity must be 1 or more.'); return; }
+  const c = classes.find(x => x.id === id);
+  cart.push({ id, qty, name: c.name }); msg('bMsg'); drawCart();
+};
+$('bUndo').onclick = () => {
+  const removed = cart.pop();
+  msg('bMsg', 'info', removed ? `Undo: removed ${removed.qty} × ${esc(removed.name)}` : 'Nothing to undo.'); drawCart();
+};
+$('bConfirm').onclick = async () => {
+  const name = $('bName').value.trim();
+  if (!name) { msg('bMsg', 'err', 'Enter the passenger name.'); return; }
+  if (!cart.length) { msg('bMsg', 'err', 'Add at least one coach class.'); return; }
+  const r = await api('/api/book', { name, type: passengerType, willing: $('bWilling').checked ? '1' : '0', lines: cart.map(l => l.id + ':' + l.qty).join(',') });
+  if (r.ok) {
+    msg('bMsg', 'ok', `Booked ${esc(r.booking.pnr)}. Ticket saved as tickets/${esc(r.booking.pnr)}.txt` +
+      r.swaps.map(m => `<div style="margin-top:6px"><b>Automatic swap &middot;</b> ${esc(m)}</div>`).join(''));
+    $('bResult').innerHTML = ticket(r.booking);
+    cart = []; drawCart(); $('bName').value = ''; $('bWilling').checked = false;
+  } else {
+    let html = esc(r.error) + '<br>No berths were changed.';
+    if (r.full) {
+      if (r.full.suggestions.length) {
+        html += `<div style="margin-top:8px;color:var(--ink)">Classes with ${r.full.qty} berth(s) free, cheapest first:</div><div class="chips">` +
+          r.full.suggestions.map(s => `<span class="chip">${s.id} ${esc(s.name)} · Rs. ${s.fare}</span>`).join('') + '</div>';
+      }
+      if (r.full.canWaitlist) {
+        html += `<div style="margin-top:12px;color:var(--ink)"><b>Join the waitlist for ${r.full.qty} × ${esc(r.full.className)}?</b>
+          <div class="row" style="margin-top:6px"><div><select id="wlCat"><option value="N">No priority need</option>
+          <option value="P">Pregnant (HIGH priority)</option><option value="D">Disability / medical (HIGH priority)</option></select></div>
+          <div class="narrow"><button class="btn alt small" id="wlJoin">Join</button></div></div></div>`;
+      }
+    }
+    msg('bMsg', 'err', html);
+    const join = $('wlJoin');
+    if (join) join.onclick = async () => {
+      const w = await api('/api/waitlist/join', { name, type: passengerType, classId: r.full.classId, qty: r.full.qty, category: $('wlCat').value });
+      msg('bMsg', w.ok ? 'ok' : 'err', esc(w.ok ? w.message : w.error));
+      if (w.ok) { cart = cart.filter(l => l.id !== r.full.classId); drawCart(); loadStats(); }
+    };
+  }
+  loadClasses(); loadStats();
+};
+
+// ---------- seat map ----------
+$('sClass').onchange = seatMap;
+async function seatMap() {
+  const r = await api('/api/seatmap?id=' + $('sClass').value);
+  if (!r.ok) { $('bays').innerHTML = `<div class="msg err">${esc(r.error)}</div>`; return; }
+  let html = '';
+  for (let bay = 1; bay <= r.bays; bay++) {
+    const bs = r.berths.filter(x => x.bay === bay);
+    const free = bs.filter(x => !x.taken).length;
+    html += `<div class="bay"><h4><span>${r.group} ${bay}</span><span style="color:var(--grey);font-weight:400">${free} free</span></h4><div class="berths">` +
+      bs.map(x => `<div class="berth ${x.lower ? 'lower' : ''} ${x.taken ? 'taken' : ''}" title="${esc(x.label)}${x.holder ? ' · ' + esc(x.holder) : ' · free'}"><b>${x.no}</b>${esc(x.type)}</div>`).join('') +
+      '</div></div>';
+  }
+  $('bays').innerHTML = html;
+}
+
+// ---------- bills ----------
+async function bills() {
+  const list = await api('/api/bookings');
+  $('billList').innerHTML = list.length ? list.map(b => ticket(b)).join('') : '<div class="card empty">No bookings yet today.</div>';
+}
+$('billFind').onclick = async () => {
+  const r = await api('/api/booking?pnr=' + encodeURIComponent($('billSearch').value));
+  $('billList').innerHTML = r.ok ? ticket(r.booking) : `<div class="msg err">${esc(r.error)}</div>`;
+};
+
+// ---------- cancel ----------
+$('cLoad').onclick = async () => {
+  msg('cMsg'); $('cResult').innerHTML = '';
+  const r = await api('/api/booking?pnr=' + encodeURIComponent($('cPnr').value));
+  if (!r.ok) { $('cForm').innerHTML = ''; msg('cMsg', 'err', esc(r.error)); return; }
+  const b = r.booking;
+  if (b.status === 'CANCELLED') { $('cForm').innerHTML = ''; msg('cMsg', 'err', esc(b.pnr) + ' is already cancelled.'); return; }
+  $('cResult').innerHTML = ticket(b);
+  const active = b.lines.filter(l => l.qty > 0);
+  $('cForm').innerHTML = `<label>What to cancel</label>
+    <div class="toggle" id="cMode"><button data-v="W" class="on">Whole booking</button><button data-v="S">Choose berths</button></div>
+    <div id="cSome" style="display:none">
+      <label>Tap the berths to cancel</label>
+      ${active.map(l => `<div style="margin:8px 0 4px;font-weight:600">${esc(l.className)}</div><div class="chips">` +
+        l.berths.map(x => `<button class="chip ${x.lower ? 'lower' : ''}" data-line="${l.index}" data-no="${x.no}">${esc(x.label)}</button>`).join('') + '</div>').join('')}
+      <div id="cPicked" class="empty" style="margin-top:8px">No berth chosen yet.</div>
+    </div>
+    <div class="actions"><button class="btn" id="cGo">Cancel whole booking (refund 90%)</button></div>`;
+  let mode = 'W';
+  let picked = [];          // [{line, no, label}]
+  const drawPicked = () => {
+    $('cPicked').textContent = picked.length ? 'Chosen: ' + picked.map(p => p.label).join(', ') : 'No berth chosen yet.';
+    $('cGo').textContent = mode === 'W' ? 'Cancel whole booking (refund 90%)'
+      : picked.length ? `Cancel ${picked.length} berth(s) (refund 90%)` : 'Choose berths first';
+    $('cGo').disabled = mode === 'S' && !picked.length;
+  };
+  document.querySelectorAll('#cMode button').forEach(x => x.onclick = () => {
+    mode = x.dataset.v;
+    document.querySelectorAll('#cMode button').forEach(y => y.classList.toggle('on', y === x));
+    $('cSome').style.display = mode === 'S' ? 'block' : 'none';
+    drawPicked();
+  });
+  document.querySelectorAll('#cSome button.chip').forEach(c => c.onclick = () => {
+    const line = Number(c.dataset.line), no = Number(c.dataset.no);
+    if (picked.length && picked[0].line !== line) {      // one coach class at a time
+      picked = [];
+      document.querySelectorAll('#cSome button.chip').forEach(x => x.classList.remove('sel'));
+    }
+    const i = picked.findIndex(p => p.no === no);
+    if (i >= 0) { picked.splice(i, 1); c.classList.remove('sel'); }
+    else { picked.push({ line, no, label: c.textContent }); c.classList.add('sel'); }
+    drawPicked();
+  });
+  $('cGo').onclick = async () => {
+    const data = mode === 'W' ? { pnr: b.pnr, mode } : { pnr: b.pnr, mode, line: picked[0].line, berths: picked.map(p => p.no).join(',') };
+    const res = await api('/api/cancel', data);
+    if (!res.ok) { msg('cMsg', 'err', esc(res.error)); return; }
+    $('cForm').innerHTML = '';
+    msg('cMsg', 'ok', `Refund: <b>${rs(res.refund)}</b>. Berths returned to the chart.` +
+      (res.promoted.length ? ` <b>${res.promoted.length}</b> waitlisted passenger(s) confirmed automatically.` : ' No waitlisted passenger could be confirmed.') +
+      res.swaps.map(m => `<div style="margin-top:6px"><b>Automatic swap &middot;</b> ${esc(m)}</div>`).join(''));
+    $('cResult').innerHTML = ticket(res.booking, 'Updated bill') + res.promoted.map(p => ticket(p, 'Waitlist confirmed automatically')).join('');
+    loadStats(); loadClasses();
+  };
+};
+
+// ---------- waitlist ----------
+async function waitlist() {
+  const list = await api('/api/waitlist');
+  $('wlRows').innerHTML = list.length ? list.map((w, i) => `<tr><td>${i + 1}</td><td><b>${esc(w.wl)}</b></td><td>${esc(w.name)} (${esc(w.type)})</td>
+    <td>${esc(w.className)}</td><td class="num">${w.qty}</td><td><span class="badge p${w.priority}">${esc(w.priorityLabel)}</span></td></tr>`).join('')
+    : '<tr><td colspan="6" class="empty">The waitlist is empty. Book a full class to try it.</td></tr>';
+}
+
+// ---------- swap ----------
+async function openSwaps() {
+  const list = await api('/api/swaps');
+  $('wOpen').innerHTML = list.length ? '<table><tbody>' + list.map(s => `<tr><td><b>${esc(s.id)}</b></td><td>${esc(s.pnr)} ${esc(s.name)}</td>
+    <td>${esc(s.berth)}</td><td>${esc(s.kind)}</td></tr>`).join('') + '</tbody></table>' : '<div class="empty">No waiting requests.</div>';
+}
+$('wLoad').onclick = loadSwap;
+async function loadSwap(note) {
+  if (!note || typeof note !== 'string') { msg('wMsg'); $('wResult').innerHTML = ''; }
+  const r = await api('/api/booking?pnr=' + encodeURIComponent($('wPnr').value));
+  if (!r.ok) { $('wForm').innerHTML = ''; msg('wMsg', 'err', esc(r.error)); return; }
+  const b = r.booking;
+  if (!note || typeof note !== 'string') $('wResult').innerHTML = ticket(b);
+  const chips = [];
+  b.lines.forEach(l => { if (l.sleeping) l.berths.forEach(x => chips.push(
+    `<button class="chip ${x.lower ? 'lower' : ''}" data-line="${l.index}" data-no="${x.no}" data-type="${x.type}" data-types="${l.types.join(' ')}">${esc(x.label)}</button>`)); });
+  $('wForm').innerHTML = `
+    <label>Fellow passengers</label>
+    <div class="actions" style="margin-top:4px"><button class="btn ${b.swapWilling ? 'ghost' : 'alt'} small" id="wWilling">
+      ${b.swapWilling ? 'Stop being available for swaps' : 'Agree to swap my berths if someone needs them'}</button></div>
+    ${chips.length ? `<label style="margin-top:16px">1. Berth you want to change</label><div class="chips" id="wChips">${chips.join('')}</div>
+    <label>2. Berth type you want</label><div class="chips" id="wTypes"><span class="empty">Choose a berth first.</span></div>
+    <div class="actions"><button class="btn" id="wGo" disabled>Find me a berth</button></div>` : '<div class="empty" style="margin-top:12px">No sleeping berths on this booking.</div>'}`;
+  $('wWilling').onclick = async () => {
+    const res = await api('/api/willing', { pnr: b.pnr, on: b.swapWilling ? '0' : '1' });
+    if (!res.ok) { msg('wMsg', 'err', esc(res.error)); return; }
+    msg('wMsg', 'ok', esc(res.booking.pnr) + (res.booking.swapWilling ? ' is now happy to swap berths.' : ' will no longer be asked to swap.') +
+      res.swaps.map(m => `<div style="margin-top:6px"><b>Automatic swap &middot;</b> ${esc(m)}</div>`).join(''));
+    $('wResult').innerHTML = ticket(res.booking);
+    openSwaps(); loadSwap('keep');
+  };
+  if (!chips.length) return;
+  let pick = null, want = null;
+  document.querySelectorAll('#wChips button').forEach(c => c.onclick = () => {
+    pick = c; want = null;
+    document.querySelectorAll('#wChips button').forEach(x => x.classList.toggle('sel', x === c));
+    const names = { LB: 'lower', MB: 'middle', UB: 'upper', SL: 'side lower', SU: 'side upper' };
+    $('wTypes').innerHTML = c.dataset.types.split(' ').filter(t => t !== c.dataset.type)
+      .map(t => `<button class="chip" data-t="${t}">${t} · ${names[t] || ''}</button>`).join('');
+    $('wGo').disabled = true; $('wGo').textContent = 'Choose a berth type';
+    document.querySelectorAll('#wTypes button').forEach(t => t.onclick = () => {
+      want = t.dataset.t;
+      document.querySelectorAll('#wTypes button').forEach(x => x.classList.toggle('sel', x === t));
+      $('wGo').disabled = false; $('wGo').textContent = `Find me a ${want} berth`;
+    });
+  });
+  $('wGo').onclick = async () => {
+    const res = await api('/api/swap', { pnr: b.pnr, line: pick.dataset.line, berth: pick.dataset.no, want });
+    if (!res.ok) { msg('wMsg', 'err', esc(res.error)); return; }
+    msg('wMsg', res.waiting ? 'info' : 'ok', esc(res.message));
+    $('wResult').innerHTML = ticket(res.booking, 'Updated ticket') + (res.partner ? ticket(res.partner, "Partner's updated ticket (agreed to swap)") : '');
+    openSwaps(); loadSwap('keep');
+  };
+}
+
+// ---------- report ----------
+async function report() {
+  const r = await loadStats();
+  const tile = (v, t) => `<div class="tile"><b>${v}</b><span>${t}</span></div>`;
+  $('tiles').innerHTML = tile(r.bookings, 'Total bookings') + tile(rs(r.revenue), 'Total revenue') + tile(esc(r.mostPopular), 'Most popular class') +
+    tile(r.active + ' / ' + r.cancelled, 'Active / cancelled' + (r.partly ? ` (${r.partly} partly)` : '')) + tile(rs(r.concession), 'Senior concession given') +
+    tile(rs(r.refunds), 'Refunds paid') + tile(r.waitlist, 'Still on waitlist') + tile(r.openSwaps, 'Waiting swap requests');
+  $('occRows').innerHTML = r.classes.map(c => `<tr><td style="width:160px"><b>${esc(c.name)}</b></td>
+    <td><div class="bar"><div style="width:${c.occupancy}%"></div></div></td><td class="num" style="width:150px">${c.occupancy}% (${c.total - c.berths}/${c.total} sold)</td></tr>`).join('');
+}
+
+drawCart();
+refresh('book');
+</script>
+</body>
+</html>

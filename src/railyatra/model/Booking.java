@@ -21,9 +21,11 @@ public class Booking implements Billable {
     private final Passenger passenger;
     private final BookingLine[] lines;
     private final int lineCount;
-    private final String note;                     // e.g. "Confirmed from waitlist WL1"
+    private final String[] notes = new String[10]; // e.g. "Confirmed from waitlist WL1", swap records
+    private int noteCount = 0;
     private double refunded = 0;          // total refunded so far (90% of what was cancelled)
     private double chargesKept = 0;       // 10% kept on everything cancelled
+    private boolean swapWilling = false;  // NOVELTY: passenger agreed to swap berths if someone needs it
 
     /** Constructor 1: normal counter booking with many lines. */
     public Booking(Passenger passenger, BookingLine[] cartLines, int lineCount) {
@@ -41,7 +43,9 @@ public class Booking implements Billable {
         this.token = counter;
         this.passenger = passenger;
         this.lineCount = lineCount;
-        this.note = note;
+        if (note != null) {
+            notes[noteCount++] = note;
+        }
         this.lines = new BookingLine[lineCount];
         for (int i = 0; i < lineCount; i++) {       // copy so the cart can be reused
             this.lines[i] = cartLines[i];
@@ -98,6 +102,18 @@ public class Booking implements Billable {
         return back;
     }
 
+    /** Cancels exactly the chosen berths of line i and returns the refund for them. */
+    public double cancelChosen(int lineIndex, int[] chosen) {
+        BookingLine line = lines[lineIndex];
+        lines[lineIndex].cancelChosen(chosen);                 // validates first, throws if wrong
+        double amount = line.getCoachClass().getFare() * chosen.length
+                * (1 - passenger.getDiscountRate()) * (1 + GST);
+        double back = amount * (1 - CANCELLATION_CHARGE);
+        refunded += back;
+        chargesKept += amount - back;
+        return back;
+    }
+
     /** True when every berth on every line has been cancelled. */
     public boolean isCancelled() {
         for (int i = 0; i < lineCount; i++) {
@@ -121,6 +137,23 @@ public class Booking implements Billable {
         return false;
     }
 
+    /** Adds a line such as "Swapped S-3 UB for S-1 LB with PNR2" to the bill (keeps the last 10). */
+    public void addNote(String text) {
+        if (noteCount == notes.length) {
+            for (int i = 1; i < notes.length; i++) {
+                notes[i - 1] = notes[i];
+            }
+            noteCount--;
+        }
+        notes[noteCount++] = text;
+    }
+
+    public boolean isSwapWilling() { return swapWilling; }
+    public void setSwapWilling(boolean willing) { swapWilling = willing; }
+
+    public int getNoteCount() { return noteCount; }
+    public String getNote(int i) { return notes[i]; }
+
     public static int getCount() { return counter; }
     public String getPnr() { return pnr; }
     public int getToken() { return token; }
@@ -141,15 +174,18 @@ public class Booking implements Billable {
         sb.append(String.format("  PNR       : %s   [%s]%n", pnr, status));
         sb.append(String.format("  Passenger : %s%n", passenger));
         sb.append(String.format("  Token     : %d  ->  collect ticket at %s%n", token, getWindow()));
-        if (note != null) {
-            sb.append("  Note      : ").append(note).append('\n');
+        if (swapWilling) {
+            sb.append("  Swap      : happy to swap berths with a fellow passenger\n");
+        }
+        for (int i = 0; i < noteCount; i++) {
+            sb.append("  Note      : ").append(notes[i]).append('\n');
         }
         sb.append("  ------------------------------------------------\n");
         for (int i = 0; i < lineCount; i++) {
             sb.append("  ").append(lines[i]).append('\n');
         }
         if (passenger.prefersLowerBerth()) {
-            sb.append("  (Senior citizen: lower berths given first)\n");
+            sb.append("  (Senior citizen: lower berths given first when free)\n");
         }
         sb.append("  ------------------------------------------------\n");
         sb.append(String.format("  Subtotal                         Rs. %,11.2f%n", getSubtotal()));

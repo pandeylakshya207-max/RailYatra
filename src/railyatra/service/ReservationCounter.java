@@ -10,6 +10,7 @@ import railyatra.exceptions.CoachClassNotFoundException;
 import railyatra.model.Booking;
 import railyatra.model.BookingLine;
 import railyatra.model.CoachClass;
+import railyatra.model.SwapRequest;
 import railyatra.model.WaitlistEntry;
 import railyatra.people.Passenger;
 import railyatra.util.ItemStack;
@@ -24,6 +25,7 @@ public class ReservationCounter {
 
     public static final int MAX_BOOKINGS = 100;
     public static final int MAX_WAITLIST = 50;
+    public static final int MAX_SWAPS = 50;
 
     // Berth patterns of one bay, as in real Indian Railways coaches
     private static final String[] SLEEPER_BAY  = {"LB", "MB", "UB", "LB", "MB", "UB", "SL", "SU"};
@@ -146,8 +148,22 @@ public class ReservationCounter {
 
     // ------------------------------------------------------------------ NOVELTY 2: waitlist + cancel
 
+    /** Overload 1: no special category (seniors still get priority automatically). */
     public WaitlistEntry addToWaitlist(Passenger p, CoachClass c, int qty) {
-        WaitlistEntry e = new WaitlistEntry(p, c, qty);
+        return addToWaitlist(p, c, qty, 'N');
+    }
+
+    /** Overload 2: category 'P' = pregnant, 'D' = disability / medical, 'N' = none. */
+    public WaitlistEntry addToWaitlist(Passenger p, CoachClass c, int qty, char category) {
+        // The same passenger may not wait twice for the same coach class
+        for (int i = 0; i < waitlist.size(); i++) {
+            WaitlistEntry w = waitlist.get(i);
+            if (w.getCoachClass() == c && w.getPassenger().getName().equalsIgnoreCase(p.getName())) {
+                throw new IllegalStateException(p.getName() + " is already on the waitlist for "
+                        + c.getName() + " as " + w.getWlNo() + ".");
+            }
+        }
+        WaitlistEntry e = new WaitlistEntry(p, c, qty, category);
         waitlist.enqueue(e);                                     // throws IllegalStateException if full
         return e;
     }
@@ -160,6 +176,13 @@ public class ReservationCounter {
         int[][] released = new int[1][];
         double refund = b.cancelPart(lineIndex, n, released);
         b.getLine(lineIndex).getCoachClass().release(released[0]);
+        return refund;
+    }
+
+    /** Cancels exactly the chosen berth numbers of one line; they go back to the chart. */
+    public double cancelChosen(Booking b, int lineIndex, int[] berthNos) {
+        double refund = b.cancelChosen(lineIndex, berthNos);
+        b.getLine(lineIndex).getCoachClass().release(berthNos);
         return refund;
     }
 
@@ -183,18 +206,23 @@ public class ReservationCounter {
     public Booking[] promoteWaitlist() {
         Booking[] temp = new Booking[waitlist.size()];
         int promoted = 0;
-        int rounds = waitlist.size();
-        for (int i = 0; i < rounds; i++) {
-            WaitlistEntry e = waitlist.dequeue();
-            CoachClass c = e.getCoachClass();
-            if (e.getQuantity() <= c.getBerths() && bookingCount < MAX_BOOKINGS) {
-                BookingLine line = new BookingLine(c, e.getQuantity());
-                line.setBerthNos(c.allocate(e.getQuantity(), e.getPassenger().prefersLowerBerth()));
-                Booking b = new Booking(e.getPassenger(), line, "Confirmed from waitlist " + e.getWlNo());
-                bookings[bookingCount++] = b;
-                temp[promoted++] = b;
-            } else {
-                waitlist.enqueue(e);                             // still waiting
+        // NOVELTY - PRIORITY WAITLIST: serve priority 2 first, then 1, then 0.
+        // Each pass walks the whole circular queue once, so order inside a priority stays first-come.
+        for (int level = WaitlistEntry.PRIORITY_MEDICAL; level >= WaitlistEntry.PRIORITY_NORMAL; level--) {
+            int rounds = waitlist.size();
+            for (int i = 0; i < rounds; i++) {
+                WaitlistEntry e = waitlist.dequeue();
+                CoachClass c = e.getCoachClass();
+                if (e.getPriority() == level && e.getQuantity() <= c.getBerths() && bookingCount < MAX_BOOKINGS) {
+                    BookingLine line = new BookingLine(c, e.getQuantity());
+                    line.setBerthNos(c.allocate(e.getQuantity(), e.getPassenger().prefersLowerBerth()));
+                    Booking b = new Booking(e.getPassenger(), line, "Confirmed from waitlist " + e.getWlNo()
+                            + " (priority: " + e.getPriorityLabel() + ")");
+                    bookings[bookingCount++] = b;
+                    temp[promoted++] = b;
+                } else {
+                    waitlist.enqueue(e);                         // still waiting, keeps its place
+                }
             }
         }
         Booking[] result = new Booking[promoted];
@@ -202,6 +230,183 @@ public class ReservationCounter {
             result[i] = temp[i];
         }
         return result;
+    }
+
+    // ------------------------------------------------------------------ NOVELTY: automatic berth swap
+
+    private final SwapRequest[] swaps = new SwapRequest[MAX_SWAPS];
+    private int swapCount = 0;
+    private Booking lastSwapPartner;
+
+    /**
+     * A passenger asks to change one berth for a berth of the wanted type (LB, MB, UB, SL, SU).
+     * Served AUTOMATICALLY, nobody else has to come to the counter:
+     *   1. a FREE berth of that type (same bay first) -> moved at once;
+     *   2. otherwise a passenger who AGREED TO SWAP at booking and holds that type
+     *      (same compartment/bay first, then the same coach) -> both tickets swapped at once;
+     *   3. otherwise the request waits (SW1, SW2 ...) and is retried automatically by servePendingSwaps().
+     * Returns a message describing what happened.
+     */
+    public String requestSwap(Booking b, int lineIndex, int berthNo, String wantType) {
+        BookingLine line = b.getLine(lineIndex);
+        CoachClass c = line.getCoachClass();
+        if (!c.hasLowerBerths()) {
+            throw new IllegalArgumentException("Swaps are only for sleeping berths, not seats in " + c.getName() + ".");
+        }
+        if (!line.holds(berthNo)) {
+            throw new IllegalArgumentException(c.berthLabel(berthNo) + " is not on " + b.getPnr() + ".");
+        }
+        if (!c.hasType(wantType)) {
+            throw new IllegalArgumentException(c.getName() + " has no " + wantType + " berths.");
+        }
+        if (c.berthType(berthNo).equals(wantType)) {
+            throw new IllegalArgumentException(c.berthLabel(berthNo) + " is already a " + wantType + " berth.");
+        }
+        for (int i = 0; i < swapCount; i++) {
+            if (swaps[i].isOpen() && swaps[i].getBooking() == b && swaps[i].getBerthNo() == berthNo) {
+                throw new IllegalArgumentException("There is already an open request " + swaps[i].getId() + " for this berth.");
+            }
+        }
+        lastSwapPartner = null;
+        String done = tryServe(b, lineIndex, berthNo, wantType);
+        if (done != null) {
+            return done;
+        }
+        if (swapCount == MAX_SWAPS) {
+            throw new IllegalStateException("Swap register is full.");
+        }
+        SwapRequest r = new SwapRequest(b, lineIndex, berthNo, wantType);
+        swaps[swapCount++] = r;
+        return "No free " + wantType + " berth and no passenger who agreed to swap has one yet. Saved as " + r.getId()
+                + "; it will be matched automatically when a willing passenger books or a berth is freed.";
+    }
+
+    /**
+     * Tries to serve one swap. Returns a message if it was done, or null if nothing fits yet.
+     * Order (families stay together):
+     *   1. free berth in the SAME bay   2. willing passenger in the SAME bay
+     *   3. free berth anywhere          4. willing passenger anywhere in the coach
+     * Fairness: a senior citizen is never moved from a lower berth to a non-lower one.
+     */
+    private String tryServe(Booking b, int lineIndex, int berthNo, String wantType) {
+        for (int pass = 1; pass <= 2; pass++) {
+            boolean sameBay = pass == 1;
+            String done = tryFree(b, lineIndex, berthNo, wantType, sameBay);
+            if (done == null) {
+                done = tryPartner(b, lineIndex, berthNo, wantType, sameBay);
+            }
+            if (done != null) {
+                return done;
+            }
+        }
+        return null;
+    }
+
+    private String tryFree(Booking b, int lineIndex, int berthNo, String wantType, boolean sameBay) {
+        BookingLine line = b.getLine(lineIndex);
+        CoachClass c = line.getCoachClass();
+        int free = c.findFreeOfType(wantType, berthNo, sameBay);
+        if (free == -1) {
+            return null;
+        }
+        String from = c.berthLabel(berthNo);
+        c.moveBerth(berthNo, free);
+        line.replaceBerth(berthNo, free);
+        b.addNote("Moved " + from + " -> " + c.berthLabel(free) + " (free " + wantType + " berth)");
+        return b.getPnr() + ": a free " + wantType + " berth was found" + (sameBay ? " in the same compartment" : "")
+                + ". Moved from " + from + " to " + c.berthLabel(free) + ".";
+    }
+
+    private String tryPartner(Booking b, int lineIndex, int berthNo, String wantType, boolean sameBay) {
+        BookingLine line = b.getLine(lineIndex);
+        CoachClass c = line.getCoachClass();
+        boolean giveUpLower = !CoachClass.isLower(c.berthType(berthNo));
+        for (int k = 0; k < bookingCount; k++) {                 // whoever booked first is asked first
+            Booking other = bookings[k];
+            if (other == b || other.isCancelled() || !other.isSwapWilling()) {
+                continue;
+            }
+            if (other.getPassenger().prefersLowerBerth() && CoachClass.isLower(wantType) && giveUpLower) {
+                continue;                                        // never move a senior off a lower berth
+            }
+            for (int li = 0; li < other.getLineCount(); li++) {
+                BookingLine ol = other.getLine(li);
+                if (ol.getCoachClass() != c) {
+                    continue;
+                }
+                for (int x : ol.getBerthNos()) {
+                    if (c.berthType(x).equals(wantType) && (!sameBay || c.bayOf(x) == c.bayOf(berthNo))) {
+                        String from = c.berthLabel(berthNo);
+                        line.replaceBerth(berthNo, x);           // both berths stay occupied,
+                        ol.replaceBerth(x, berthNo);             // only the owners change
+                        b.addNote("Swapped " + from + " for " + c.berthLabel(x) + " with " + other.getPnr());
+                        other.addNote("Swapped " + c.berthLabel(x) + " for " + from + " with " + b.getPnr()
+                                + " (agreed to swap)");
+                        lastSwapPartner = other;
+                        return b.getPnr() + " (" + b.getPassenger().getName() + ") swapped " + from + " for "
+                                + c.berthLabel(x) + " with " + other.getPnr() + " (" + other.getPassenger().getName()
+                                + ", agreed to swap" + (sameBay ? ", same compartment" : "") + "). Both tickets updated.";
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Retries every waiting swap request, oldest first. Called automatically after a booking,
+     * after someone agrees to swap, and after a cancellation. Returns what happened.
+     */
+    public String[] servePendingSwaps() {
+        String[] temp = new String[swapCount];
+        int n = 0;
+        for (int i = 0; i < swapCount; i++) {
+            SwapRequest r = swaps[i];
+            if (!r.isOpen()) {
+                continue;
+            }
+            String done = tryServe(r.getBooking(), r.getLineIndex(), r.getBerthNo(), r.getWantType());
+            if (done != null) {
+                r.markDone();
+                temp[n++] = r.getId() + " matched: " + done;
+            }
+        }
+        String[] out = new String[n];
+        for (int i = 0; i < n; i++) {
+            out[i] = temp[i];
+        }
+        return out;
+    }
+
+    /** Passenger agrees (or stops agreeing) to swap; waiting requests are retried at once. */
+    public String[] setSwapWilling(Booking b, boolean willing) {
+        b.setSwapWilling(willing);
+        return willing ? servePendingSwaps() : new String[0];
+    }
+
+    /** The other booking changed by the last direct match (null if none). */
+    public Booking takeLastSwapPartner() {
+        Booking p = lastSwapPartner;
+        lastSwapPartner = null;
+        return p;
+    }
+
+    /** Open (waiting) swap requests, exact-size array. */
+    public SwapRequest[] getOpenSwaps() {
+        int n = 0;
+        for (int i = 0; i < swapCount; i++) {
+            if (swaps[i].isOpen()) {
+                n++;
+            }
+        }
+        SwapRequest[] open = new SwapRequest[n];
+        n = 0;
+        for (int i = 0; i < swapCount; i++) {
+            if (swaps[i].isOpen()) {
+                open[n++] = swaps[i];
+            }
+        }
+        return open;
     }
 
     // ------------------------------------------------------------------ report

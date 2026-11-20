@@ -4,3 +4,4 @@ tickets/
 .idea/
 .vscode/
 *.iml
+out-web/

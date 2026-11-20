@@ -22,8 +22,8 @@ public class Booking implements Billable {
     private final BookingLine[] lines;
     private final int lineCount;
     private final String note;                     // e.g. "Confirmed from waitlist WL1"
-    private boolean cancelled = false;
-    private double refund = 0;
+    private double refunded = 0;          // total refunded so far (90% of what was cancelled)
+    private double chargesKept = 0;       // 10% kept on everything cancelled
 
     /** Constructor 1: normal counter booking with many lines. */
     public Booking(Passenger passenger, BookingLine[] cartLines, int lineCount) {
@@ -82,11 +82,43 @@ public class Booking implements Billable {
         return getSubtotal() - getDiscount() + getGst();
     }
 
-    /** NOVELTY 2 - cancels this booking and returns the refund amount. */
-    public double cancel() {
-        cancelled = true;
-        refund = getTotal() * (1 - CANCELLATION_CHARGE);
-        return refund;
+    /**
+     * Cancels n berths of line i (partial cancellation) and returns the refund for them.
+     * The cancelled amount is priced exactly like the bill: fare - concession + GST.
+     * The berth numbers released are returned through the line so the coach class can free them.
+     */
+    public double cancelPart(int lineIndex, int n, int[][] releasedOut) {
+        BookingLine line = lines[lineIndex];
+        double amount = line.getCoachClass().getFare() * n
+                * (1 - passenger.getDiscountRate()) * (1 + GST);
+        releasedOut[0] = line.cancelBerths(n);
+        double back = amount * (1 - CANCELLATION_CHARGE);
+        refunded += back;
+        chargesKept += amount - back;
+        return back;
+    }
+
+    /** True when every berth on every line has been cancelled. */
+    public boolean isCancelled() {
+        for (int i = 0; i < lineCount; i++) {
+            if (lines[i].getActiveQty() > 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** True when some (but not all) berths were cancelled. */
+    public boolean isPartlyCancelled() {
+        if (isCancelled()) {
+            return false;
+        }
+        for (int i = 0; i < lineCount; i++) {
+            if (lines[i].getCancelledQty() > 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static int getCount() { return counter; }
@@ -95,8 +127,8 @@ public class Booking implements Billable {
     public Passenger getPassenger() { return passenger; }
     public int getLineCount() { return lineCount; }
     public BookingLine getLine(int i) { return lines[i]; }
-    public boolean isCancelled() { return cancelled; }
-    public double getRefund() { return refund; }
+    public double getRefund() { return refunded; }
+    public double getChargesKept() { return chargesKept; }
 
     @Override
     public String toString() {
@@ -105,7 +137,8 @@ public class Booking implements Billable {
         sb.append(line);
         sb.append("|           RAILYATRA  -  RESERVATION BILL         |\n");
         sb.append(line);
-        sb.append(String.format("  PNR       : %s   [%s]%n", pnr, cancelled ? "CANCELLED" : "CONFIRMED"));
+        String status = isCancelled() ? "CANCELLED" : (isPartlyCancelled() ? "PARTLY CANCELLED" : "CONFIRMED");
+        sb.append(String.format("  PNR       : %s   [%s]%n", pnr, status));
         sb.append(String.format("  Passenger : %s%n", passenger));
         sb.append(String.format("  Token     : %d  ->  collect ticket at %s%n", token, getWindow()));
         if (note != null) {
@@ -128,9 +161,9 @@ public class Booking implements Billable {
         if (getDiscount() > 0) {
             sb.append(String.format("  You saved Rs. %,.2f with your concession!%n", getDiscount()));
         }
-        if (cancelled) {
+        if (refunded > 0) {
             sb.append(String.format("  Refunded (after %d%% charge)      Rs. %,11.2f%n",
-                    (int) Math.round(CANCELLATION_CHARGE * 100), refund));
+                    (int) Math.round(CANCELLATION_CHARGE * 100), refunded));
         }
         sb.append(line);
         return sb.toString();

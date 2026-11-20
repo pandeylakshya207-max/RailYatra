@@ -105,7 +105,7 @@ Final methods: `Person.getName()` and `Booking.getTotal()`. `toString()` is over
 | # | Feature | Demo (in the program) | Where in code | Concepts it shows |
 |---|---|---|---|---|
 | N1 | Smart berth allotment, seniors get lower berths | Book 3 × AC 3 Tier as Senior → `B-1 LB, B-4 LB, B-7 SL` | `CoachClass.allocate()`, `berthType()`, `Passenger.prefersLowerBerth()` overridden in `SeniorCitizen` | `boolean[]` array, `%` operator, two-pass search, **runtime polymorphism** |
-| N2 | Waitlist + cancellation + auto-confirm | Book 8 × AC First Class (General); new booking asks 3 × 104 → join waitlist (Y); menu 6 → cancel PNR1 → WL1 confirmed as new PNR | `util/WaitlistQueue.java`, `ReservationCounter.cancel()`, `promoteWaitlist()`, `Booking.cancel()` | **own circular queue (FIFO)**, overloaded constructor in `Booking`, static WL counter |
+| N2 | Waitlist + cancellation + auto-confirm | Book 8 × AC First Class (General); new booking asks 3 × 104 → join waitlist (Y); menu 6 → PNR1 → W (whole) or S (some berths) → WL1 confirmed as new PNR | `util/WaitlistQueue.java`, `ReservationCounter.cancel()` / `cancelPart()`, `promoteWaitlist()`, `Booking.cancelPart()` | **own circular queue (FIFO)**, overloaded constructor in `Booking`, static WL counter |
 | N3 | Alternative class suggestions | Ask more berths than left → list of classes with enough berths, cheapest first | `ReservationCounter.suggestAlternatives()` | **bubble sort** on an array, exact-size array copy |
 
 | Likely question | Answer |
@@ -117,6 +117,7 @@ Final methods: `Person.getName()` and `Booking.getTotal()`. `toString()` is over
 | How is a berth type found? | `layout[(berthNo - 1) % layout.length]`. AC 3 Tier repeats LB MB UB LB MB UB SL SU every 8 berths, so berth 12 → index 3 → LB. |
 | What if the waitlisted request is still too big? | `promoteWaitlist()` dequeues each entry once; if it doesn't fit, it is enqueued again at the rear, so order is kept. |
 | Do the new features change the official answers? | No. Test cases 1–4 still give 1,134.00, 3,937.50 and the two exceptions; SelfTest checks this. Case 3 still throws the exception and leaves berths unchanged; joining the waitlist is optional afterwards. |
+| Can a passenger cancel only part of a booking? | Yes. Menu 6 asks W (whole) or S (some). With S the clerk picks one coach-class line and how many berths; only those berths are freed and refunded (90%), the bill shows PARTLY CANCELLED, and the freed berths go to the waitlist. Code: `BookingLine.cancelBerths()`, `Booking.cancelPart()`, `ReservationCounter.cancelPart()`. |
 | Why is 41 × AC 3 Tier not offered the waitlist? | The class has only 40 berths in total, so 41 can never be confirmed. |
 
 ---

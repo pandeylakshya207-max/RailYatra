@@ -152,13 +152,27 @@ public class ReservationCounter {
         return e;
     }
 
-    /** Cancels a booking: berths go back to the chart, 90% is refunded. */
+    /**
+     * Partial cancellation: cancels n berths of one coach-class line of a booking.
+     * Those berths go back to the chart and 90% of their price is refunded.
+     */
+    public double cancelPart(Booking b, int lineIndex, int n) {
+        int[][] released = new int[1][];
+        double refund = b.cancelPart(lineIndex, n, released);
+        b.getLine(lineIndex).getCoachClass().release(released[0]);
+        return refund;
+    }
+
+    /** Full cancellation = cancel every berth still held on every line. */
     public double cancel(Booking b) {
+        double refund = 0;
         for (int i = 0; i < b.getLineCount(); i++) {
-            BookingLine line = b.getLine(i);
-            line.getCoachClass().release(line.getBerthNos());
+            int active = b.getLine(i).getActiveQty();
+            if (active > 0) {
+                refund += cancelPart(b, i, active);
+            }
         }
-        return b.cancel();
+        return refund;
     }
 
     /**
@@ -192,12 +206,11 @@ public class ReservationCounter {
 
     // ------------------------------------------------------------------ report
 
-    /** Revenue = full total of confirmed bookings + 10% charge kept from cancelled ones. */
+    /** Revenue = total of berths still booked + 10% charge kept on every cancelled berth. */
     public double getTotalRevenue() {
         double sum = 0;
         for (int i = 0; i < bookingCount; i++) {
-            Booking b = bookings[i];
-            sum += b.isCancelled() ? b.getTotal() - b.getRefund() : b.getTotal();
+            sum += bookings[i].getTotal() + bookings[i].getChargesKept();
         }
         return sum;
     }

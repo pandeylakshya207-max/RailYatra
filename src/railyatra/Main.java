@@ -203,13 +203,48 @@ public class Main {
             return;
         }
         System.out.print(b);
-        char yes = input.readChoice("Cancel this booking? 10% charge applies. (Y/N): ", "YN");
-        if (yes == 'N') {
-            System.out.println("Not cancelled.");
-            return;
+
+        // Whole booking or only some berths?
+        char how = input.readChoice("Cancel the (W)hole booking or only (S)ome berths? (W/S): ", "WS");
+        double refund;
+        if (how == 'W') {
+            char yes = input.readChoice("Cancel all berths on " + b.getPnr() + "? 10% charge applies. (Y/N): ", "YN");
+            if (yes == 'N') {
+                System.out.println("Not cancelled.");
+                return;
+            }
+            refund = counter.cancel(b);
+            System.out.printf("%s fully cancelled. Refund: Rs. %,.2f. Berths returned to the chart.%n", b.getPnr(), refund);
+        } else {
+            // List only the lines that still have berths
+            System.out.println("Berths still booked on " + b.getPnr() + ":");
+            int[] lineNo = new int[b.getLineCount()];       // menu number -> line index
+            int shown = 0;
+            for (int i = 0; i < b.getLineCount(); i++) {
+                BookingLine l = b.getLine(i);
+                if (l.getActiveQty() > 0) {
+                    lineNo[shown] = i;
+                    shown++;
+                    System.out.printf("  %d. %-16s %d berth(s): %s%n", shown, l.getCoachClass().getName(),
+                            l.getActiveQty(), l.getBerthText());
+                }
+            }
+            int pick = input.readInt("Which line? (1-" + shown + "): ", 1, shown);
+            BookingLine chosen = b.getLine(lineNo[pick - 1]);
+            int n = input.readInt("How many " + chosen.getCoachClass().getName() + " berths to cancel? (1-"
+                    + chosen.getActiveQty() + "): ", 1, chosen.getActiveQty());
+            char yes = input.readChoice("Cancel " + n + " x " + chosen.getCoachClass().getName()
+                    + "? 10% charge applies. (Y/N): ", "YN");
+            if (yes == 'N') {
+                System.out.println("Not cancelled.");
+                return;
+            }
+            refund = counter.cancelPart(b, lineNo[pick - 1], n);
+            System.out.printf("Cancelled %d x %s on %s. Refund: Rs. %,.2f. Berths returned to the chart.%n",
+                    n, chosen.getCoachClass().getName(), b.getPnr(), refund);
+            System.out.println("\nUpdated bill:");
+            System.out.print(b);
         }
-        double refund = counter.cancel(b);
-        System.out.printf("%s cancelled. Refund: Rs. %,.2f. Berths returned to the chart.%n", b.getPnr(), refund);
 
         Booking[] promoted = counter.promoteWaitlist();
         if (promoted.length == 0) {
@@ -276,14 +311,18 @@ public class Main {
         // Extra: split by passenger type, concession given, cancellations, waitlist
         int seniorCount = 0;
         int cancelledCount = 0;
+        int partlyCount = 0;
         double concession = 0;
         double refunds = 0;
         for (int i = 0; i < n; i++) {
             Booking b = counter.getBooking(i);
+            refunds += b.getRefund();                  // full and partial cancellations
             if (b.isCancelled()) {
                 cancelledCount++;
-                refunds += b.getRefund();
                 continue;
+            }
+            if (b.isPartlyCancelled()) {
+                partlyCount++;
             }
             if (b.getPassenger() instanceof SeniorCitizen) {
                 seniorCount++;
@@ -291,7 +330,8 @@ public class Main {
             concession += b.getDiscount();
         }
         int active = n - cancelledCount;
-        System.out.println("Active / cancelled        : " + active + " / " + cancelledCount);
+        System.out.println("Active / cancelled        : " + active + " / " + cancelledCount
+                + (partlyCount > 0 ? "  (" + partlyCount + " active booking(s) partly cancelled)" : ""));
         System.out.println("General / Senior (active) : " + (active - seniorCount) + " / " + seniorCount);
         System.out.printf("Senior concession given   : Rs. %,.2f%n", concession);
         System.out.printf("Refunds paid              : Rs. %,.2f%n", refunds);
@@ -322,7 +362,7 @@ public class Main {
         System.out.println(" 4  Booking report");
         System.out.println(" 5  Exit");
         System.out.println(" ---- RailYatra extras ----");
-        System.out.println(" 6  Cancel booking (refund + auto-confirm waitlist)");
+        System.out.println(" 6  Cancel booking - whole or some berths (refund + auto-confirm waitlist)");
         System.out.println(" 7  View waitlist");
     }
 }

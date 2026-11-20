@@ -90,8 +90,9 @@ public class SelfTest {
         Booking full = rc.confirm(new General("Fills First"), cart);
         rc.addToWaitlist(new SeniorCitizen("Waiting Senior"), first, 2);
         check("N2  Waitlist holds the request", "1", String.valueOf(rc.getWaitlist().size()));
+        double fullTotal = full.getTotal();
         double refund = rc.cancel(full);
-        check("N2  Refund after 10% charge", String.format("%.2f", full.getTotal() * 0.9), String.format("%.2f", refund));
+        check("N2  Refund after 10% charge", String.format("%.2f", fullTotal * 0.9), String.format("%.2f", refund));
         Booking[] promoted = rc.promoteWaitlist();
         check("N2  Waitlist auto-confirmed after cancel", "1 promoted, 6 berths left, queue empty",
                 promoted.length + " promoted, " + first.getBerths() + " berths left, queue "
@@ -99,8 +100,21 @@ public class SelfTest {
 
         // Case 1 and 2 totals must be unchanged by the new features
         check("Revenue counts kept cancellation charge", String.format("%.2f",
-                b1.getTotal() + b2.getTotal() + full.getTotal() * 0.1 + promoted[0].getTotal()),
+                b1.getTotal() + b2.getTotal() + fullTotal * 0.1 + promoted[0].getTotal()),
                 String.format("%.2f", rc.getTotalRevenue()));
+
+        // Partial cancellation: General books 2 x Sleeper + 1 x Second Sitting, then cancels 1 Sleeper only
+        CoachClass sleeper = rc.findCoachClass(101);
+        cart = new ItemStack(10);
+        cart.push(new BookingLine(sleeper, 2));
+        cart.push(new BookingLine(rc.findCoachClass(105), 1));
+        Booking part = rc.confirm(new General("Part Cancel"), cart);
+        int sleeperBefore = sleeper.getBerths();
+        double partRefund = rc.cancelPart(part, 0, 1);
+        check("P   Cancel 1 of 2 Sleeper: refund", "425.25", String.format("%.2f", partRefund));
+        check("P   Bill keeps the rest", "661.50, PARTLY", String.format("%.2f", part.getTotal())
+                + (part.isPartlyCancelled() ? ", PARTLY" : ", NOT PARTLY"));
+        check("P   Only 1 berth freed", String.valueOf(sleeperBefore + 1), String.valueOf(sleeper.getBerths()));
 
         System.out.println("\n" + passed + " / " + total + " checks passed.");
     }

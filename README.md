@@ -17,7 +17,7 @@ javac -d out $(find src -name "*.java")
 java -cp out railyatra.Main
 ```
 
-**Run the official test cases and novelty checks automatically** (13 PASS/FAIL checks):
+**Run the official test cases and novelty checks automatically** (16 PASS/FAIL checks):
 ```
 java -cp out railyatra.SelfTest
 ```
@@ -32,7 +32,7 @@ In IntelliJ / Eclipse / VS Code, open the folder, mark `src` as the source root,
 4  Booking report      -> total bookings, revenue, most popular class (+ extras)
 5  Exit
 ---- RailYatra extras ----
-6  Cancel booking      -> 90% refund, berths go back, waitlist confirmed automatically
+6  Cancel booking      -> whole booking OR only some berths; 90% refund, berths go back, waitlist confirmed automatically
 7  View waitlist       -> WL1, WL2 ... in first-come order
 ```
 Options 1-5 are exactly as the problem statement asks; 6 and 7 are our novelty features.
@@ -81,7 +81,7 @@ Senior citizens are given **lower berths first** (`Passenger.prefersLowerBerth()
 Built with a `boolean[]` berth chart per coach class.
 
 **N2. Waitlist with automatic confirmation.** When a class is full, the passenger can join the waitlist (WL1, WL2 ...).
-When anyone cancels (menu 6, 10% charge, 90% refund), freed berths are given to the waitlist in
+When anyone cancels the whole booking or just some berths (menu 6, 10% charge, 90% refund), freed berths are given to the waitlist in
 **first-come, first-served** order and a new PNR is printed automatically. The waitlist is **our own circular queue on an array**
 (FIFO), which pairs with our own stack for undo (LIFO).
 
